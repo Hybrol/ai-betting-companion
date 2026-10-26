@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from ..models.schema import Match, PaperBet, Prediction, BetStatus, BookmakerOdds
 from ..engine.paper_trader import PaperTrader
 from ..engine.discord_notifier import DiscordNotifier
@@ -49,7 +50,19 @@ class AutoBettor:
                     br = PaperTrader.get_or_create_bankroll(db)
                     stake = prediction.recommended_stake
                     
-                    if stake > 0 and br.current_balance >= stake:
+                    # Portfolio Risk Limit: check total active open wagers
+                    active_stake = db.query(func.sum(PaperBet.stake)).filter(
+                        PaperBet.status == BetStatus.PENDING
+                    ).scalar() or 0.0
+                    
+                    max_portfolio_exposure = br.initial_balance * settings.MAX_ACTIVE_EXPOSURE_PERCENT
+
+                    if (active_stake + stake) > max_portfolio_exposure:
+                        logger.info(
+                            f"[AUTO-BET PAUSED] Active bankroll exposure reached ({active_stake:.2f}€ / {max_portfolio_exposure:.2f}€ max). "
+                            f"Holding off new wagers until active matches settle."
+                        )
+                    elif stake > 0 and br.current_balance >= stake:
                         PaperTrader.place_bet(
                             db=db,
                             match_id=match.id,

@@ -2,6 +2,8 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/a
 
 export interface DashboardStats {
   current_balance: number;
+  total_equity?: number;
+  active_stakes?: number;
   initial_balance: number;
   total_staked: number;
   total_pnl: number;

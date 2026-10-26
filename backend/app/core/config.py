@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     MIN_EV_THRESHOLD: float = 0.03     # 3% positive expected value minimum
     KELLY_FRACTION: float = 0.25       # Quarter-Kelly for risk mitigation
     MAX_BET_PERCENTAGE: float = 0.05   # Max 5% bankroll per single wager
+    MAX_ACTIVE_EXPOSURE_PERCENT: float = 0.25  # Max 25% bankroll in active pending wagers
     
     # Automation & Cron
     AUTO_BET_ENABLED: bool = True      # Automatically place simulated bets on good opportunities

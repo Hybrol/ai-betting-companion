@@ -126,8 +126,8 @@ export default function DashboardPage() {
           color="blue"
         />
         <StatCard
-          title="Total Staked"
-          value={`${stats?.total_staked.toFixed(2) || "0.00"} €`}
+          title="Active In-Play / Staked"
+          value={`${((stats?.active_stakes ?? stats?.total_staked ?? 0)).toFixed(2)} €`}
           subtitle={`Max Drawdown: ${(stats?.max_drawdown_percent || 0).toFixed(1)}%`}
           icon={Percent}
           color="amber"

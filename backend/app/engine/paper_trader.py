@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from ..models.schema import Match, PaperBet, Bankroll, BankrollHistory, BetStatus, MatchStatus
 from ..core.config import settings
 
@@ -187,18 +188,33 @@ class PaperTrader:
             for h in history
         ]
 
-        # Calculate max drawdown
-        peak = br.initial_balance
+        # Calculate max drawdown on realized/settled equity
+        settled_bets = db.query(PaperBet).filter(
+            PaperBet.status.in_([BetStatus.GREEN, BetStatus.RED])
+        ).order_by(PaperBet.resolved_at.asc()).all()
+
+        equity_peak = br.initial_balance
+        running_equity = br.initial_balance
         max_drawdown = 0.0
-        for h in history:
-            if h.balance > peak:
-                peak = h.balance
-            dd = (peak - h.balance) / peak if peak > 0 else 0
+
+        for sb in settled_bets:
+            running_equity += sb.profit_loss
+            if running_equity > equity_peak:
+                equity_peak = running_equity
+            dd = (equity_peak - running_equity) / equity_peak if equity_peak > 0 else 0.0
             if dd > max_drawdown:
                 max_drawdown = dd
 
+        # Active pending wagers in play
+        active_stakes = db.query(func.sum(PaperBet.stake)).filter(
+            PaperBet.status == BetStatus.PENDING
+        ).scalar() or 0.0
+        total_equity = br.current_balance + active_stakes
+
         return {
             "current_balance": round(br.current_balance, 2),
+            "total_equity": round(total_equity, 2),
+            "active_stakes": round(active_stakes, 2),
             "initial_balance": round(br.initial_balance, 2),
             "total_staked": round(br.total_staked, 2),
             "total_pnl": round(br.total_pnl, 2),
