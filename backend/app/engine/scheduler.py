@@ -174,6 +174,9 @@ async def execute_betting_cycle(target_league: str | None = None):
                     if auto_placed:
                         total_auto_bets += 1
 
+                # Yield control to event loop to keep API responsive
+                await asyncio.sleep(0.01)
+
         # Curated Múltipla de Valor
         curated_multiple = ValueFinder.build_curated_multiple(
             opportunities=all_cycle_opportunities,
