@@ -130,7 +130,7 @@ export async function fetchStats(): Promise<DashboardStats> {
 }
 
 export async function fetchMatches(league?: string): Promise<MatchItem[]> {
-  const url = league ? `${API_BASE_URL}/matches/?league=${encodeURIComponent(league)}` : `${API_BASE_URL}/matches/`;
+  const url = league ? `${API_BASE_URL}/matches?league=${encodeURIComponent(league)}` : `${API_BASE_URL}/matches`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch matches");
   return res.json();
@@ -200,7 +200,7 @@ export async function resetBankroll(initial_balance = 1000): Promise<any> {
 }
 
 export async function fetchSettings(): Promise<SystemSettings> {
-  const res = await fetch(`${API_BASE_URL}/settings/`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE_URL}/settings`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch settings");
   return res.json();
 }
@@ -210,7 +210,7 @@ export async function updateSettings(data: {
   discord_webhook_url?: string;
   min_ev_threshold?: number;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/settings/`, {
+  const res = await fetch(`${API_BASE_URL}/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),

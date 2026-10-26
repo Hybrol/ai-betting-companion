@@ -14,6 +14,7 @@ class UpdateSettingsRequest(BaseModel):
 class TestDiscordRequest(BaseModel):
     webhook_url: str | None = None
 
+@router.get("")
 @router.get("/")
 def get_settings():
     """Returns current automation and notification configurations."""
@@ -30,6 +31,7 @@ def get_settings():
         "target_leagues": settings.TARGET_LEAGUES
     }
 
+@router.post("")
 @router.post("/")
 def update_settings(req: UpdateSettingsRequest):
     """Updates auto-betting or Discord webhook preferences dynamically."""

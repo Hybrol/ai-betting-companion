@@ -10,6 +10,7 @@ router = APIRouter(prefix="/matches", tags=["Matches"])
 async def run_sync_task(db: Session, target_league: str | None = None):
     await execute_betting_cycle(target_league)
 
+@router.get("")
 @router.get("/")
 def list_matches(
     league: str | None = Query(None),
