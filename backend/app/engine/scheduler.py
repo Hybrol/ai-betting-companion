@@ -124,6 +124,11 @@ async def execute_betting_cycle(target_league: str | None = None):
 
                 # Update prediction table
                 db.query(Prediction).filter(Prediction.match_id == match.id).delete()
+                
+                # Sort values by highest Expected Value (+EV)
+                values.sort(key=lambda x: x.ev_percent, reverse=True)
+
+                best_prediction = None
                 for v in values:
                     p = Prediction(
                         match_id=match.id,
@@ -139,20 +144,23 @@ async def execute_betting_cycle(target_league: str | None = None):
                     )
                     db.add(p)
                     db.flush()
+                    if best_prediction is None:
+                        best_prediction = p
 
                     total_new_opportunities += 1
 
-                    # Trigger Auto-Bettor & Discord Notification
+                db.commit()
+
+                # Strictly process ONLY the single highest-value pick for this match to avoid duplicate gambling
+                if best_prediction:
                     auto_placed = await AutoBettor.process_value_opportunity(
                         db=db,
                         match=match,
-                        prediction=p,
+                        prediction=best_prediction,
                         odds_by_bookmaker=odds_by_bookie
                     )
                     if auto_placed:
                         total_auto_bets += 1
-
-                db.commit()
 
         logger.info(
             f"=== [CRON] Cycle Completed! Found {total_new_opportunities} +EV opportunities, "
