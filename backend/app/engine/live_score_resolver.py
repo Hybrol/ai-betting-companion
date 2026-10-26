@@ -208,6 +208,38 @@ class LiveScoreResolver:
                                     f"[LIVE RESOLVER] Match LIVE ({clock_desc}): {match.home_team} {h_score} - {a_score} {match.away_team}"
                                 )
                             db.commit()
+
+                            # Check for early mathematically definitive settlements (e.g. BTTS 1-1, Over crossed)
+                            early_resolved = PaperTrader.check_early_in_play_settlement(
+                                db=db,
+                                match_id=match.id,
+                                home_score=h_score,
+                                away_score=a_score
+                            )
+                            if early_resolved:
+                                total_settled += len(early_resolved)
+                                br = PaperTrader.get_or_create_bankroll(db)
+                                for b in early_resolved:
+                                    is_green = (b.status == BetStatus.GREEN)
+                                    logger.info(
+                                        f"[LIVE RESOLVER] Early settlement for {match.home_team} vs {match.away_team}: "
+                                        f"{b.market_type} {b.selection} -> {'GREEN' if is_green else 'RED'}!"
+                                    )
+                                    await DiscordNotifier.notify_bet_result(
+                                        home_team=match.home_team,
+                                        away_team=match.away_team,
+                                        league=match.league,
+                                        home_score=h_score,
+                                        away_score=a_score,
+                                        market_type=b.market_type,
+                                        selection=b.selection,
+                                        bookmaker=b.bookmaker,
+                                        odds=b.odds,
+                                        stake=b.stake,
+                                        profit_loss=b.profit_loss,
+                                        is_green=is_green,
+                                        current_balance=br.current_balance
+                                    )
                         break
         except Exception as e:
             logger.error(f"[LIVE RESOLVER ERROR] {e}", exc_info=True)

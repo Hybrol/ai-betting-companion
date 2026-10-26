@@ -87,6 +87,105 @@ class PaperTrader:
         return bet
 
     @classmethod
+    def _settle_bet(
+        cls,
+        db: Session,
+        br: Bankroll,
+        bet: PaperBet,
+        match: Match,
+        is_win: bool
+    ):
+        if is_win:
+            bet.status = BetStatus.GREEN
+            bet.payout = round(bet.stake * bet.odds, 2)
+            bet.profit_loss = round(bet.payout - bet.stake, 2)
+            br.current_balance += bet.payout
+            br.total_pnl += bet.profit_loss
+            br.greens += 1
+
+            hist = BankrollHistory(
+                balance=round(br.current_balance, 2),
+                pnl_delta=bet.profit_loss,
+                description=f"GREEN! Won {bet.profit_loss:+.2f}€ on {match.home_team} vs {match.away_team} ({bet.selection} @ {bet.odds})"
+            )
+            db.add(hist)
+        else:
+            bet.status = BetStatus.RED
+            bet.payout = 0.0
+            bet.profit_loss = -bet.stake
+            br.total_pnl -= bet.stake
+            br.reds += 1
+
+            hist = BankrollHistory(
+                balance=round(br.current_balance, 2),
+                pnl_delta=-bet.stake,
+                description=f"RED. Lost -{bet.stake:.2f}€ on {match.home_team} vs {match.away_team} ({bet.selection})"
+            )
+            db.add(hist)
+
+        bet.resolved_at = datetime.utcnow()
+
+    @classmethod
+    def check_early_in_play_settlement(
+        cls,
+        db: Session,
+        match_id: int,
+        home_score: int,
+        away_score: int
+    ) -> list[PaperBet]:
+        """
+        Settles in-play bets early if their outcome is mathematically sealed before Full Time.
+        - BTTS (YES): Both scored (>=1 each) -> Definitive GREEN
+        - BTTS (NO): Both scored (>=1 each) -> Definitive RED (e.g. 1-1 reached)
+        - OVER (1.5/2.5/3.5): Total goals > line -> Definitive GREEN
+        - UNDER (1.5/2.5/3.5): Total goals > line -> Definitive RED
+        """
+        match = db.query(Match).filter(Match.id == match_id).first()
+        if not match:
+            return []
+
+        pending_bets = db.query(PaperBet).filter(
+            PaperBet.match_id == match_id,
+            PaperBet.status == BetStatus.PENDING
+        ).all()
+
+        if not pending_bets:
+            return []
+
+        br = cls.get_or_create_bankroll(db)
+        resolved = []
+        total_goals = home_score + away_score
+
+        for bet in pending_bets:
+            early_verdict = None
+            sel = bet.selection.upper()
+
+            if bet.market_type == "BTTS":
+                if home_score > 0 and away_score > 0:
+                    early_verdict = (sel in ("YES", "SIM"))
+
+            elif bet.market_type == "OVER_UNDER_1_5":
+                if total_goals > 1.5:
+                    early_verdict = (sel == "OVER")
+
+            elif bet.market_type in ("OVER_UNDER_2_5", "OVER_UNDER"):
+                if total_goals > 2.5:
+                    early_verdict = (sel == "OVER")
+
+            elif bet.market_type == "OVER_UNDER_3_5":
+                if total_goals > 3.5:
+                    early_verdict = (sel == "OVER")
+
+            if early_verdict is not None:
+                cls._settle_bet(db=db, br=br, bet=bet, match=match, is_win=early_verdict)
+                resolved.append(bet)
+
+        if resolved:
+            db.commit()
+
+        return resolved
+
+    @classmethod
     def resolve_match_bets(
         cls,
         db: Session,
@@ -149,35 +248,7 @@ class PaperTrader:
                 else:
                     is_win = (home_score == 0 or away_score == 0)
 
-            if is_win:
-                bet.status = BetStatus.GREEN
-                bet.payout = round(bet.stake * bet.odds, 2)
-                bet.profit_loss = round(bet.payout - bet.stake, 2)
-                br.current_balance += bet.payout
-                br.total_pnl += bet.profit_loss
-                br.greens += 1
-
-                hist = BankrollHistory(
-                    balance=round(br.current_balance, 2),
-                    pnl_delta=bet.profit_loss,
-                    description=f"GREEN! Won {bet.profit_loss:+.2f}€ on {match.home_team} vs {match.away_team} ({bet.selection} @ {bet.odds})"
-                )
-                db.add(hist)
-            else:
-                bet.status = BetStatus.RED
-                bet.payout = 0.0
-                bet.profit_loss = -bet.stake
-                br.total_pnl -= bet.stake
-                br.reds += 1
-
-                hist = BankrollHistory(
-                    balance=round(br.current_balance, 2),
-                    pnl_delta=-bet.stake,
-                    description=f"RED. Lost -{bet.stake:.2f}€ on {match.home_team} vs {match.away_team} ({bet.selection})"
-                )
-                db.add(hist)
-
-            bet.resolved_at = datetime.utcnow()
+            cls._settle_bet(db=db, br=br, bet=bet, match=match, is_win=is_win)
             resolved.append(bet)
 
         db.commit()
