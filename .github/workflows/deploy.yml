@@ -1,0 +1,38 @@
+name: CI/CD Deploy to Raspberry Pi
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull Latest Changes
+        run: |
+          cd /home/pi/ai-betting-companion
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Update Backend Dependencies
+        run: |
+          /home/pi/ai-betting-companion/backend/venv/bin/pip install -r /home/pi/ai-betting-companion/backend/requirements.txt
+
+      - name: Build Frontend
+        run: |
+          cd /home/pi/ai-betting-companion/frontend
+          npm install --production=false
+          NODE_OPTIONS="--max-old-space-size=1536" npm run build
+
+      - name: Restart 24/7 System Services
+        run: |
+          sudo systemctl restart ai-betting-backend
+          sudo systemctl restart ai-betting-frontend
+
+      - name: Verify Health Check
+        run: |
+          sleep 5
+          curl -f http://localhost:8080/ || exit 1
+          curl -f http://localhost:3001/ || exit 1
+          echo "Deployment verified and online!"
