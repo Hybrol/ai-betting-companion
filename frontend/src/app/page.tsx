@@ -1,0 +1,230 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Wallet,
+  TrendingUp,
+  CheckCircle2,
+  XCircle,
+  Percent,
+  RotateCcw,
+  Sparkles,
+  ArrowRight,
+  ShieldAlert,
+} from "lucide-react";
+import Link from "next/link";
+import StatCard from "@/components/StatCard";
+import BankrollChart from "@/components/BankrollChart";
+import BetModal from "@/components/BetModal";
+import { fetchStats, fetchValueBets, resetBankroll, DashboardStats, ValueBetItem } from "@/lib/api";
+
+export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [topValues, setTopValues] = useState<ValueBetItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedBet, setSelectedBet] = useState<ValueBetItem | null>(null);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [s, v] = await Promise.all([fetchStats(), fetchValueBets(3.0)]);
+      setStats(s);
+      setTopValues(v.slice(0, 5));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleReset = async () => {
+    if (confirm("Reset fictional bankroll back to 1,000.00 €? All previous paper bets will be cleared.")) {
+      await resetBankroll(1000);
+      loadData();
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Hero Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-white tracking-tight">Paper-Trading Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Real-time odds analysis for Solverde &bull; Betclic &bull; Betano with fictional bankroll simulation
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Bankroll</span>
+          </button>
+          <Link
+            href="/value-bets"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-lg shadow-emerald-600/20"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>View All +EV Bets</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          title="Virtual Bankroll"
+          value={`${stats?.current_balance.toFixed(2) || "1,000.00"} €`}
+          subtitle={`Initial: ${stats?.initial_balance || 1000} €`}
+          icon={Wallet}
+          color="emerald"
+        />
+        <StatCard
+          title="Net Profit / Loss"
+          value={`${(stats?.total_pnl || 0) >= 0 ? "+" : ""}${stats?.total_pnl.toFixed(2) || "0.00"} €`}
+          subtitle={`ROI / Yield: ${(stats?.roi_percent || 0).toFixed(1)}%`}
+          icon={TrendingUp}
+          color={(stats?.total_pnl || 0) >= 0 ? "emerald" : "rose"}
+        />
+        <StatCard
+          title="Greens vs Reds"
+          value={`${stats?.greens || 0}W - ${stats?.reds || 0}L`}
+          subtitle={`Hit Rate: ${(stats?.win_rate_percent || 0).toFixed(1)}%`}
+          icon={CheckCircle2}
+          color="blue"
+        />
+        <StatCard
+          title="Total Staked"
+          value={`${stats?.total_staked.toFixed(2) || "0.00"} €`}
+          subtitle={`Max Drawdown: ${(stats?.max_drawdown_percent || 0).toFixed(1)}%`}
+          icon={Percent}
+          color="amber"
+        />
+      </div>
+
+      {/* Bankroll Chart */}
+      <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white">Bankroll Growth & Evolution</h2>
+            <p className="text-xs text-slate-400">Chronological fictional wallet balance over time</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+            {stats?.history?.length || 0} Events
+          </span>
+        </div>
+        <BankrollChart
+          history={stats?.history || []}
+          initialBalance={stats?.initial_balance || 1000}
+        />
+      </div>
+
+      {/* Top Value Bets Section */}
+      <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-400" />
+              <span>Top AI Value Opportunities (+EV)</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Matches with highest statistical expected value based on Poisson modeling & Kelly stakes
+            </p>
+          </div>
+          <Link
+            href="/value-bets"
+            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+          >
+            <span>See all {topValues.length} opportunities</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {topValues.length === 0 ? (
+          <div className="py-12 text-center text-slate-500 text-sm">
+            No active value opportunities meeting minimum threshold. Click &quot;Sync Odds&quot; to refresh feeds.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/60 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
+                <tr>
+                  <th className="py-3 px-4 rounded-l-xl">Match & League</th>
+                  <th className="py-3 px-4">Selection</th>
+                  <th className="py-3 px-4">Best Bookmaker</th>
+                  <th className="py-3 px-4">Odds</th>
+                  <th className="py-3 px-4">Fair Odds (Prob)</th>
+                  <th className="py-3 px-4">Expected Value</th>
+                  <th className="py-3 px-4">Kelly Rec.</th>
+                  <th className="py-3 px-4 rounded-r-xl text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {topValues.map((v) => (
+                  <tr key={v.id} className="hover:bg-slate-800/40 transition">
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-white text-sm">
+                        {v.home_team} vs {v.away_team}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-medium">{v.league}</div>
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-white">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
+                        {v.selection}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="font-semibold text-emerald-400">{v.best_bookmaker}</span>
+                    </td>
+                    <td className="py-3.5 px-4 font-extrabold text-white text-sm">{v.best_odds.toFixed(2)}</td>
+                    <td className="py-3.5 px-4">
+                      <span className="text-slate-300">{v.fair_odds.toFixed(2)}</span>
+                      <span className="text-slate-500 ml-1">({(v.model_prob * 100).toFixed(1)}%)</span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-1 rounded-md text-[11px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        +{v.ev_percent.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-emerald-400">
+                      {v.recommended_stake.toFixed(2)} €
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        onClick={() => setSelectedBet(v)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm"
+                      >
+                        Simulate Bet
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {selectedBet && (
+        <BetModal
+          isOpen={!!selectedBet}
+          onClose={() => setSelectedBet(null)}
+          onSuccess={loadData}
+          matchId={selectedBet.match_id}
+          matchTitle={`${selectedBet.home_team} vs ${selectedBet.away_team}`}
+          bookmaker={selectedBet.best_bookmaker}
+          selection={selectedBet.selection}
+          odds={selectedBet.best_odds}
+          recommendedStake={selectedBet.recommended_stake}
+          predictionId={selectedBet.id}
+        />
+      )}
+    </div>
+  );
+}
