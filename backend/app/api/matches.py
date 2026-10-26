@@ -86,3 +86,12 @@ async def trigger_sync(
     """
     await run_sync_task(db, league)
     return {"message": "Sync complete", "league": league or "All Leagues"}
+
+@router.post("/check-live-scores")
+async def check_live_scores():
+    """
+    Triggers immediate ESPN live score checking and auto-settlement.
+    """
+    from ..engine.live_score_resolver import LiveScoreResolver
+    settled = await LiveScoreResolver.check_and_resolve_live_matches()
+    return {"message": "Live score resolution executed successfully", "settled_bets_count": settled}

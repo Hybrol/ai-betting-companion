@@ -108,6 +108,9 @@ export interface PaperBetItem {
   profit_loss: number;
   confidence?: string;
   reasoning?: string;
+  home_score?: number | null;
+  away_score?: number | null;
+  match_status?: string;
   placed_at: string;
   resolved_at?: string;
 }
@@ -145,6 +148,12 @@ export async function syncMatches(league?: string): Promise<{ message: string }>
   const url = league ? `${API_BASE_URL}/matches/sync?league=${encodeURIComponent(league)}` : `${API_BASE_URL}/matches/sync`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger sync");
+  return res.json();
+}
+
+export async function checkLiveScores(): Promise<{ message: string; settled_bets_count: number }> {
+  const res = await fetch(`${API_BASE_URL}/matches/check-live-scores`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to check live scores");
   return res.json();
 }
 

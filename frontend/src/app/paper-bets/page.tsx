@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert } from "lucide-react";
-import { fetchPaperBets, resetBankroll, PaperBetItem } from "@/lib/api";
+import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert, RefreshCw } from "lucide-react";
+import { fetchPaperBets, resetBankroll, checkLiveScores, PaperBetItem } from "@/lib/api";
 
 const MARKET_FORMAT_NAMES: Record<string, string> = {
   "1X2": "1X2 (Resultado Final)",
@@ -17,6 +17,7 @@ export default function PaperBetsPage() {
   const [bets, setBets] = useState<PaperBetItem[]>([]);
   const [filter, setFilter] = useState<string>("ALL");
   const [loading, setLoading] = useState(true);
+  const [checkingLive, setCheckingLive] = useState(false);
 
   const loadBets = async () => {
     try {
@@ -35,6 +36,18 @@ export default function PaperBetsPage() {
     loadBets();
   }, [filter]);
 
+  const handleCheckLive = async () => {
+    try {
+      setCheckingLive(true);
+      await checkLiveScores();
+      await loadBets();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCheckingLive(false);
+    }
+  };
+
   const handleReset = async () => {
     if (confirm("Resetar banca virtual para 1.000,00 € e limpar histórico de apostas antigas?")) {
       await resetBankroll(1000);
@@ -51,16 +64,26 @@ export default function PaperBetsPage() {
             <span>Simulated Paper Wagers</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Histórico de apostas virtuais simuladas com modelo estatístico Dixon-Coles (SRIJ)
+            Histórico de apostas virtuais e liquidação automática minuto a minuto via ESPN Scoreboard
           </p>
         </div>
-        <button
-          onClick={handleReset}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700 self-start md:self-auto"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Resetar Banca & Histórico</span>
-        </button>
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          <button
+            onClick={handleCheckLive}
+            disabled={checkingLive}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-700 hover:bg-emerald-600 text-white transition shadow-md shadow-emerald-700/20"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${checkingLive ? "animate-spin" : ""}`} />
+            <span>{checkingLive ? "A consultar ESPN..." : "Verificar Resultados ESPN"}</span>
+          </button>
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Resetar Banca & Histórico</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter Tabs */}
@@ -133,8 +156,18 @@ export default function PaperBetsPage() {
                         )}
                       </td>
                       <td className="py-3.5 px-4">
-                        <div className="font-bold text-white text-sm">
-                          {b.home_team} vs {b.away_team}
+                        <div className="font-bold text-white text-sm flex items-center gap-2">
+                          <span>{b.home_team} vs {b.away_team}</span>
+                          {b.home_score !== null && b.home_score !== undefined && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-black bg-slate-800 text-emerald-400 border border-slate-700">
+                              {b.home_score} - {b.away_score}
+                            </span>
+                          )}
+                          {b.match_status === "IN_PLAY" && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                              AO VIVO
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-400 font-medium">
                           {b.league} &bull; {new Date(b.placed_at).toLocaleDateString("pt-PT", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}

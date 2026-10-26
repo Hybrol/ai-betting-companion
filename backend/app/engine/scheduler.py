@@ -230,7 +230,7 @@ async def execute_betting_cycle(target_league: str | None = None):
         db.close()
 
 def start_scheduler():
-    """Starts the 30-minute background cron job."""
+    """Starts the 30-minute background cron job and 1-minute live score settler."""
     if not scheduler.running:
         trigger = IntervalTrigger(minutes=settings.CRON_INTERVAL_MINUTES)
         scheduler.add_job(
@@ -240,8 +240,22 @@ def start_scheduler():
             name="30-min Betting Companion Cron",
             replace_existing=True
         )
+
+        # 60-second live score tracking and automated paper bet settlement
+        from .live_score_resolver import LiveScoreResolver
+        live_trigger = IntervalTrigger(seconds=60)
+        scheduler.add_job(
+            LiveScoreResolver.check_and_resolve_live_matches,
+            trigger=live_trigger,
+            id="live_score_resolver",
+            name="1-min ESPN Live Score & Auto-Settler",
+            replace_existing=True
+        )
+
         scheduler.start()
-        logger.info(f"Background scheduler started: running every {settings.CRON_INTERVAL_MINUTES} minutes.")
+        logger.info(
+            f"Background scheduler started: 30-minute betting cycle & 60-second ESPN live score auto-settler active."
+        )
 
 def stop_scheduler():
     """Stops the scheduler safely."""

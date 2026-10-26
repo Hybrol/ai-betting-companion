@@ -149,6 +149,55 @@ class DiscordNotifier:
         return await cls.send_webhook_message(embeds=[embed])
 
     @classmethod
+    async def notify_bet_result(
+        cls,
+        home_team: str,
+        away_team: str,
+        league: str,
+        home_score: int,
+        away_score: int,
+        market_type: str,
+        selection: str,
+        bookmaker: str,
+        odds: float,
+        stake: float,
+        profit_loss: float,
+        is_green: bool,
+        current_balance: float
+    ) -> bool:
+        market_name = MARKET_LABELS_PT.get(market_type, market_type)
+        sel_name = SELECTION_LABELS_PT.get(selection, selection)
+        score_str = f"{home_team} {home_score} - {away_score} {away_team}"
+
+        if is_green:
+            title = f"🎉 APOSTA GANHA (GREEN)! +{profit_loss:.2f} €"
+            color = 0x10b981  # Emerald
+            status_text = f"✅ **GREEN!** Retorno líquido: **`+{profit_loss:.2f} €`** (Odd `{odds:.2f}`)"
+        else:
+            title = f"❌ Aposta Não Correspondida (RED): {profit_loss:.2f} €"
+            color = 0xef4444  # Red
+            status_text = f"🛑 **RED.** Perda da stake: `-{stake:.2f} €`"
+
+        embed = {
+            "title": title,
+            "description": (
+                f"⚽ **Resultado Final:** `{score_str}`\n"
+                f"🏆 **Competição:** `{league}`\n"
+                f"📋 **Mercado Resolvido:** `{market_name}` — **{sel_name}**\n"
+                f"💰 **Odd & Casa:** **`{odds:.2f}`** na **{bookmaker}** (SRIJ) | Stake: **`{stake:.2f} €`**\n\n"
+                f"{status_text}\n"
+                f"💵 **Saldo Atualizado da Banca:** **`{current_balance:.2f} €`**\n"
+            ),
+            "color": color,
+            "footer": {
+                "text": f"{settings.RESPONSIBLE_GAMBLING_MSG} • AI Betting Companion"
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        return await cls.send_webhook_message(embeds=[embed])
+
+    @classmethod
     async def send_test_notification(cls, webhook_url: str | None = None) -> tuple[bool, str]:
         url = webhook_url or settings.DISCORD_WEBHOOK_URL
         if not url:
