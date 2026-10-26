@@ -75,6 +75,27 @@ CANONICAL_TEAMS = {
     "villarreal": "Villarreal CF",
     "espanhol": "RCD Espanyol",
     "espanyol": "RCD Espanyol",
+
+    # Brasileirão
+    "flamengo": "Flamengo",
+    "flamengo rj": "Flamengo",
+    "atletico-mg": "Atlético Mineiro",
+    "atletico mg": "Atlético Mineiro",
+    "atletico mineiro": "Atlético Mineiro",
+    "atletico-pr": "Athletico Paranaense",
+    "atletico pr": "Athletico Paranaense",
+    "coritiba": "Coritiba",
+    "coritiba pr": "Coritiba",
+    "gremio": "Grêmio",
+    "gremio rs": "Grêmio",
+    "palmeiras": "Palmeiras",
+    "sao paulo": "São Paulo",
+    "corinthians": "Corinthians",
+    "botafogo": "Botafogo",
+    "fluminense": "Fluminense",
+    "vasco": "Vasco da Gama",
+    "cruzeiro": "Cruzeiro",
+    "internacional": "Internacional",
 }
 
 def clean_string(s: str) -> str:
@@ -82,7 +103,7 @@ def clean_string(s: str) -> str:
     # Normalize unicode accents
     s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
     # Remove common prefixes/suffixes
-    s = re.sub(r'\b(fc|cf|cd|sc|ac|sad|gd|sl|rcd|ca)\b', '', s)
+    s = re.sub(r'\b(fc|cf|cd|sc|ac|sad|gd|sl|rcd|ca|rj|rs|pr|mg|sp)\b', '', s)
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s

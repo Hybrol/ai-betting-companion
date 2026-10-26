@@ -38,6 +38,12 @@ ESPN_LEAGUE_MAP = {
     "champions league": "uefa.champions",
     "europa league": "uefa.europa",
     "conference league": "uefa.europa.conf",
+    # Brazil
+    "brasileirão": "bra.1",
+    "brasileirao": "bra.1",
+    "brazil serie a": "bra.1",
+    "brasil - serie a": "bra.1",
+    "brasil - série a": "bra.1",
     # Arab Leagues
     "saudi pro league": "sau.1",
     "uae pro league": "uae.1",
@@ -53,7 +59,7 @@ class LiveScoreResolver:
         if c1 and c2 and (c1 in c2 or c2 in c1):
             return True
         from difflib import SequenceMatcher
-        return SequenceMatcher(None, c1, c2).ratio() >= 0.70
+        return SequenceMatcher(None, c1, c2).ratio() >= 0.60
 
     @classmethod
     async def fetch_espn_scoreboard(cls, league_slug: str) -> list[dict]:
@@ -111,9 +117,12 @@ class LiveScoreResolver:
                 slug = ESPN_LEAGUE_MAP.get(norm_lg)
                 if slug:
                     leagues_to_fetch.add(slug)
+                h_low, a_low = m.home_team.lower(), m.away_team.lower()
+                if any(x in h_low or x in a_low for x in ["flamengo", "coritiba", "gremio", "atletico", "palmeiras", "sao paulo"]):
+                    leagues_to_fetch.add("bra.1")
 
-            if not leagues_to_fetch:
-                return 0
+            # Always ensure primary active leagues are tracked
+            leagues_to_fetch.update(["por.1", "esp.1", "fra.1", "bra.1"])
 
             # Fetch scoreboards concurrently
             tasks = [cls.fetch_espn_scoreboard(slug) for slug in leagues_to_fetch]
