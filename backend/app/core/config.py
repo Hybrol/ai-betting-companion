@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database
-    DATABASE_URL: str = "sqlite:///./backend/data/betting_companion.db"
+    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'data', 'betting_companion.db')}")
     
     # Paper Trading & Quantitative Value Bounds
     INITIAL_BANKROLL: float = 1000.0   # Fictional 1,000.00 EUR

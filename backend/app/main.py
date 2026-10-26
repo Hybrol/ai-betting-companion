@@ -16,6 +16,25 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database schema...")
     Base.metadata.create_all(bind=engine)
     
+    # Auto-migrate any new SQLite columns
+    try:
+        with engine.begin() as conn:
+            res = conn.exec_driver_sql("PRAGMA table_info(predictions)").fetchall()
+            cols = [r[1] for r in res]
+            if "confidence" not in cols:
+                conn.exec_driver_sql("ALTER TABLE predictions ADD COLUMN confidence VARCHAR(32) DEFAULT 'MÉDIA'")
+            if "reasoning" not in cols:
+                conn.exec_driver_sql("ALTER TABLE predictions ADD COLUMN reasoning TEXT")
+
+            res_b = conn.exec_driver_sql("PRAGMA table_info(paper_bets)").fetchall()
+            cols_b = [r[1] for r in res_b]
+            if "confidence" not in cols_b:
+                conn.exec_driver_sql("ALTER TABLE paper_bets ADD COLUMN confidence VARCHAR(32) DEFAULT 'MÉDIA'")
+            if "reasoning" not in cols_b:
+                conn.exec_driver_sql("ALTER TABLE paper_bets ADD COLUMN reasoning TEXT")
+    except Exception as e:
+        logger.debug(f"Auto-migration note: {e}")
+
     # Initialize bankroll if empty
     db = SessionLocal()
     try:
