@@ -18,16 +18,32 @@ class AutoBettor:
         cls,
         db: Session,
         match: Match,
-        prediction: Prediction,
-        odds_by_bookmaker: dict[str, dict[str, float]]
+        prediction: Prediction
     ) -> bool:
         """
         Evaluates a value opportunity:
         1. Ensures STRICT single-bet per match (never bet on multiple casinos or duplicate match bets).
-        2. Auto-bets on the single best bookmaker line if AUTO_BET_ENABLED and not already placed.
-        3. Sends a Discord notification if DISCORD_WEBHOOK_URL is set and match wasn't already notified recently.
+        2. Strictly validates quality criteria (odds in sweet spot 1.40 - 4.50, prob >= 22%, EV >= 3.5%).
+        3. Caps total bankroll active exposure to 25%.
+        4. Auto-bets on the single best bookmaker line if AUTO_BET_ENABLED and not already placed.
+        5. Sends a Discord notification in the elite tipster format.
         """
         now = datetime.utcnow()
+
+        # Strict odds range validation
+        if prediction.best_odds < settings.MIN_ODDS or prediction.best_odds > settings.MAX_ODDS:
+            logger.debug(
+                f"[AUTO-BET FILTERED] Odds {prediction.best_odds:.2f} for '{match.home_team} vs {match.away_team}' "
+                f"outside elite sweet spot [{settings.MIN_ODDS} - {settings.MAX_ODDS}]."
+            )
+            return False
+
+        if prediction.model_prob < settings.MIN_PROBABILITY:
+            logger.debug(
+                f"[AUTO-BET FILTERED] Probability {prediction.model_prob:.2%} for '{match.home_team} vs {match.away_team}' "
+                f"below minimum confidence threshold ({settings.MIN_PROBABILITY:.0%})."
+            )
+            return False
 
         # Strict match-level check: Has this match already been wagered on with ANY bookmaker?
         existing_match_bet = db.query(PaperBet).filter(
@@ -71,12 +87,15 @@ class AutoBettor:
                             selection=prediction.selection,
                             odds=prediction.best_odds,
                             stake=stake,
-                            prediction_id=prediction.id
+                            prediction_id=prediction.id,
+                            confidence=prediction.confidence or "MÉDIA",
+                            reasoning=prediction.reasoning
                         )
                         auto_bet_placed = True
                         logger.info(
                             f"[AUTO-BET PLACED] {stake:.2f}€ on '{match.home_team} vs {match.away_team}' "
-                            f"(Best Bookmaker: {prediction.best_bookmaker} @ {prediction.best_odds:.2f}, Pick: {prediction.selection})"
+                            f"(Best Bookmaker: {prediction.best_bookmaker} @ {prediction.best_odds:.2f}, "
+                            f"Market: {prediction.market_type} - {prediction.selection}, Conf: {prediction.confidence})"
                         )
                     else:
                         logger.warning(
@@ -96,7 +115,7 @@ class AutoBettor:
                     away_team=match.away_team,
                     league=match.league,
                     kickoff=match.kickoff,
-                    odds_by_bookmaker=odds_by_bookmaker,
+                    market_type=prediction.market_type,
                     selection=prediction.selection,
                     best_bookmaker=prediction.best_bookmaker,
                     best_odds=prediction.best_odds,
@@ -104,6 +123,8 @@ class AutoBettor:
                     fair_odds=prediction.fair_odds,
                     ev_percent=prediction.ev_percent,
                     recommended_stake=prediction.recommended_stake,
+                    confidence=prediction.confidence or "MÉDIA",
+                    reasoning=prediction.reasoning or "",
                     auto_bet_placed=auto_bet_placed or (existing_match_bet is not None)
                 )
                 if sent:

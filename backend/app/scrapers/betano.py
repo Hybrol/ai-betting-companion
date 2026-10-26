@@ -9,12 +9,16 @@ from ..engine.normalizer import normalize_team_name
 logger = logging.getLogger(__name__)
 
 BETANO_LEAGUE_IDS = {
-    "Liga Portugal": "17083",
     "Premier League": "1",
     "La Liga": "5",
     "Serie A": "1635",
     "Bundesliga": "216",
-    "Champions League": "16839"
+    "Ligue 1": "215",
+    "Liga Portugal": "17083",
+    "Champions League": "16839",
+    "Europa League": "16840",
+    "Conference League": "10016",
+    "Saudi Pro League": "18925",
 }
 
 HEADERS = {
@@ -37,7 +41,7 @@ class BetanoScraper(BaseBookmakerScraper):
     async def fetch_league_matches(self, league_name: str) -> list[ScrapedMatch]:
         league_id = BETANO_LEAGUE_IDS.get(league_name)
         if not league_id:
-            logger.warning(f"League '{league_name}' not configured for Betano.")
+            logger.debug(f"League '{league_name}' not in Betano mapping.")
             return []
 
         url = f"https://www.betano.pt/api/sports/FOOT/hot/trending/leagues/{league_id}/events"
@@ -65,28 +69,51 @@ class BetanoScraper(BaseBookmakerScraper):
 
                 for m in markets:
                     m_name = m.get("name", "").lower()
+
+                    # 1X2 / Resultado Final
                     if "resultado final" in m_name:
                         for sel in m.get("selections", []):
                             s_name = sel.get("name", "").strip().upper()
                             price = float(sel.get("price", 0.0))
-                            if price > 0:
+                            if price > 1.0:
                                 odds_items.append(ScrapedOddsItem(market_type="1X2", selection=s_name, odds=price))
+
+                    # Dupla Chance / Hipótese Dupla
+                    elif "hipótese dupla" in m_name or "hipotese dupla" in m_name:
+                        for sel in m.get("selections", []):
+                            s_name = sel.get("name", "").strip().upper()
+                            price = float(sel.get("price", 0.0))
+                            if price > 1.0 and s_name in ("1X", "X2", "12"):
+                                odds_items.append(ScrapedOddsItem(market_type="DOUBLE_CHANCE", selection=s_name, odds=price))
+
+                    # Total de Golos Mais/Menos
                     elif "total de golos mais/menos" in m_name and "1ª parte" not in m_name:
                         for sel in m.get("selections", []):
                             s_name = sel.get("name", "").lower()
                             price = float(sel.get("price", 0.0))
-                            if "mais de 2.5" in s_name:
-                                odds_items.append(ScrapedOddsItem(market_type="OVER_UNDER_2_5", selection="OVER", odds=price))
-                            elif "menos 2.5" in s_name:
-                                odds_items.append(ScrapedOddsItem(market_type="OVER_UNDER_2_5", selection="UNDER", odds=price))
+                            if price <= 1.0:
+                                continue
+
+                            if "2.5" in s_name:
+                                sel_type = "OVER" if "mais" in s_name else "UNDER"
+                                odds_items.append(ScrapedOddsItem(market_type="OVER_UNDER_2_5", selection=sel_type, odds=price))
+                            elif "1.5" in s_name:
+                                sel_type = "OVER" if "mais" in s_name else "UNDER"
+                                odds_items.append(ScrapedOddsItem(market_type="OVER_UNDER_1_5", selection=sel_type, odds=price))
+                            elif "3.5" in s_name:
+                                sel_type = "OVER" if "mais" in s_name else "UNDER"
+                                odds_items.append(ScrapedOddsItem(market_type="OVER_UNDER_3_5", selection=sel_type, odds=price))
+
+                    # Ambas as Equipas Marcam (BTTS)
                     elif "ambas as equipas marcam" in m_name:
                         for sel in m.get("selections", []):
                             s_name = sel.get("name", "").lower()
                             price = float(sel.get("price", 0.0))
-                            if "sim" in s_name:
-                                odds_items.append(ScrapedOddsItem(market_type="BTTS", selection="YES", odds=price))
-                            elif "n" in s_name:
-                                odds_items.append(ScrapedOddsItem(market_type="BTTS", selection="NO", odds=price))
+                            if price > 1.0:
+                                if "sim" in s_name:
+                                    odds_items.append(ScrapedOddsItem(market_type="BTTS", selection="YES", odds=price))
+                                elif "n" in s_name:
+                                    odds_items.append(ScrapedOddsItem(market_type="BTTS", selection="NO", odds=price))
 
                 if odds_items:
                     results.append(ScrapedMatch(

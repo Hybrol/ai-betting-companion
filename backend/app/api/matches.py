@@ -39,13 +39,16 @@ def list_matches(
         for p in m.predictions:
             preds_list.append({
                 "id": p.id,
+                "market_type": p.market_type,
                 "selection": p.selection,
                 "model_prob": p.model_prob,
                 "fair_odds": p.fair_odds,
                 "best_bookmaker": p.best_bookmaker,
                 "best_odds": p.best_odds,
                 "ev_percent": p.ev_percent,
-                "recommended_stake": p.recommended_stake
+                "recommended_stake": p.recommended_stake,
+                "confidence": getattr(p, "confidence", "MÉDIA") or "MÉDIA",
+                "reasoning": getattr(p, "reasoning", "") or ""
             })
 
         result.append({

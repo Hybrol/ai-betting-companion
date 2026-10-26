@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { History, CheckCircle2, XCircle, Clock, RotateCcw } from "lucide-react";
+import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert } from "lucide-react";
 import { fetchPaperBets, resetBankroll, PaperBetItem } from "@/lib/api";
+
+const MARKET_FORMAT_NAMES: Record<string, string> = {
+  "1X2": "1X2 (Resultado Final)",
+  "DOUBLE_CHANCE": "Dupla Chance",
+  "OVER_UNDER_1_5": "Over/Under 1.5",
+  "OVER_UNDER_2_5": "Over/Under 2.5",
+  "OVER_UNDER_3_5": "Over/Under 3.5",
+  "BTTS": "Ambas Marcam",
+};
 
 export default function PaperBetsPage() {
   const [bets, setBets] = useState<PaperBetItem[]>([]);
@@ -27,14 +36,11 @@ export default function PaperBetsPage() {
   }, [filter]);
 
   const handleReset = async () => {
-    if (confirm("Reset fictional bankroll and clear all paper bets?")) {
+    if (confirm("Resetar banca virtual para 1.000,00 € e limpar histórico de apostas antigas?")) {
       await resetBankroll(1000);
       loadBets();
     }
   };
-
-  const totalWon = bets.filter((b) => b.status === "GREEN").reduce((acc, b) => acc + b.profit_loss, 0);
-  const totalLost = bets.filter((b) => b.status === "RED").reduce((acc, b) => acc + Math.abs(b.profit_loss), 0);
 
   return (
     <div className="space-y-6">
@@ -45,7 +51,7 @@ export default function PaperBetsPage() {
             <span>Simulated Paper Wagers</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Complete track record of fictional bets, Greens (Wins), Reds (Losses), and settlements
+            Histórico de apostas virtuais simuladas com modelo estatístico Dixon-Coles (SRIJ)
           </p>
         </div>
         <button
@@ -53,7 +59,7 @@ export default function PaperBetsPage() {
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700 self-start md:self-auto"
         >
           <RotateCcw className="w-3.5 h-3.5" />
-          <span>Reset History</span>
+          <span>Resetar Banca & Histórico</span>
         </button>
       </div>
 
@@ -77,24 +83,25 @@ export default function PaperBetsPage() {
       {/* Bets Table */}
       <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm backdrop-blur">
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-sm">Loading simulated bets...</div>
+          <div className="py-16 text-center text-slate-400 text-sm">Carregando apostas simuladas...</div>
         ) : bets.length === 0 ? (
           <div className="py-16 text-center text-slate-500 text-sm">
-            No simulated bets in this view. Browse matches or +EV opportunities to place your first fictional bet!
+            Nenhuma aposta neste filtro. As oportunidades automáticas serão colocadas no próximo ciclo de 30 minutos!
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-800/60 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
                 <tr>
-                  <th className="py-3 px-4 rounded-l-xl">Status</th>
-                  <th className="py-3 px-4">Match & League</th>
-                  <th className="py-3 px-4">Selection</th>
-                  <th className="py-3 px-4">Bookmaker</th>
-                  <th className="py-3 px-4">Odds</th>
+                  <th className="py-3 px-4 rounded-l-xl">Estado</th>
+                  <th className="py-3 px-4">Jogo & Liga</th>
+                  <th className="py-3 px-4">Mercado</th>
+                  <th className="py-3 px-4">Seleção</th>
+                  <th className="py-3 px-4">Casa (SRIJ)</th>
+                  <th className="py-3 px-4">Odd</th>
                   <th className="py-3 px-4">Stake</th>
-                  <th className="py-3 px-4">Potential Payout</th>
-                  <th className="py-3 px-4 rounded-r-xl text-right">Profit / Loss</th>
+                  <th className="py-3 px-4">Retorno Potencial</th>
+                  <th className="py-3 px-4 rounded-r-xl text-right">Resultado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -129,14 +136,24 @@ export default function PaperBetsPage() {
                         <div className="font-bold text-white text-sm">
                           {b.home_team} vs {b.away_team}
                         </div>
-                        <div className="text-[11px] text-slate-400 font-medium">{b.league}</div>
+                        <div className="text-[11px] text-slate-400 font-medium">
+                          {b.league} &bull; {new Date(b.placed_at).toLocaleDateString("pt-PT", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                        {b.reasoning && (
+                          <div className="mt-1 text-[11px] text-slate-400 line-clamp-1 italic text-slate-400">
+                            &ldquo;{b.reasoning}&rdquo;
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-300">
+                        {MARKET_FORMAT_NAMES[b.market_type] || b.market_type}
                       </td>
                       <td className="py-3.5 px-4 font-bold text-white">
                         <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
                           {b.selection}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-300">{b.bookmaker}</td>
+                      <td className="py-3.5 px-4 font-semibold text-emerald-400">{b.bookmaker}</td>
                       <td className="py-3.5 px-4 font-extrabold text-white text-sm">{b.odds.toFixed(2)}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-200">{b.stake.toFixed(2)} €</td>
                       <td className="py-3.5 px-4 text-slate-300 font-medium">
@@ -145,7 +162,7 @@ export default function PaperBetsPage() {
                       <td className="py-3.5 px-4 text-right font-extrabold text-sm">
                         {isGreen && <span className="text-emerald-400">+{b.profit_loss.toFixed(2)} €</span>}
                         {isRed && <span className="text-rose-400">{b.profit_loss.toFixed(2)} €</span>}
-                        {isPending && <span className="text-slate-500">Unsettled</span>}
+                        {isPending && <span className="text-slate-500">Pendente</span>}
                       </td>
                     </tr>
                   );
@@ -154,6 +171,12 @@ export default function PaperBetsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Responsible Gaming Footer Note */}
+      <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+        <ShieldAlert className="w-4 h-4 text-amber-500" />
+        <span>Aposta sempre com responsabilidade. Proibido a menores de 18 anos (+18). Linha de Apoio SICAD: 1414.</span>
       </div>
     </div>
   );

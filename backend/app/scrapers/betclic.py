@@ -10,12 +10,22 @@ from ..engine.normalizer import normalize_team_name
 logger = logging.getLogger(__name__)
 
 BETCLIC_LEAGUES = {
-    "Liga Portugal": "https://www.betclic.pt/futebol-s1/liga-portugal-c32",
+    # Principais Ligas Europeias
     "Premier League": "https://www.betclic.pt/futebol-s1/premier-league-c4",
     "La Liga": "https://www.betclic.pt/futebol-s1/la-liga-c7",
     "Serie A": "https://www.betclic.pt/futebol-s1/serie-a-c6",
     "Bundesliga": "https://www.betclic.pt/futebol-s1/bundesliga-c5",
-    "Champions League": "https://www.betclic.pt/futebol-s1/liga-dos-campeoes-c8"
+    "Ligue 1": "https://www.betclic.pt/futebol-s1/ligue-1-mcdonalds-c3",
+    "Liga Portugal": "https://www.betclic.pt/futebol-s1/liga-portugal-c32",
+    "Champions League": "https://www.betclic.pt/futebol-s1/liga-dos-campeoes-c8",
+    "Europa League": "https://www.betclic.pt/futebol-s1/liga-europa-c9",
+    "Conference League": "https://www.betclic.pt/futebol-s1/liga-conferencia-c3822",
+    # Ligas Árabes
+    "Saudi Pro League": "https://www.betclic.pt/futebol-s1/arabia-saudita-primeira-divisao-c89",
+    "UAE Pro League": "https://www.betclic.pt/futebol-s1/emirados-arabes-unidos-pro-league-c214",
+    "Qatar Stars League": "https://www.betclic.pt/futebol-s1/catar-stars-league-c215",
+    # Todas as outras competições do dia na Betclic
+    "Geral Futebol": "https://www.betclic.pt/futebol-s1",
 }
 
 HEADERS = {
@@ -32,8 +42,8 @@ class BetclicScraper(BaseBookmakerScraper):
     async def fetch_league_matches(self, league_name: str) -> list[ScrapedMatch]:
         url = BETCLIC_LEAGUES.get(league_name)
         if not url:
-            logger.warning(f"League '{league_name}' not configured for Betclic.")
-            return []
+            # Check if generic football page can be used
+            url = BETCLIC_LEAGUES["Geral Futebol"]
 
         results = []
         try:
@@ -77,23 +87,41 @@ class BetclicScraper(BaseBookmakerScraper):
                         continue
                     kickoff = parser.isoparse(match_date_str)
 
-                    # Extract 1X2 market
+                    comp_name = match.get("competition", {}).get("name") or league_name
+
                     odds_items: list[ScrapedOddsItem] = []
                     market = match.get("market", {})
                     selections = market.get("mainSelections", [])
-                    
+
                     if len(selections) >= 3:
-                        # 1 = home, X = draw, 2 = away
-                        odds_items.append(ScrapedOddsItem(market_type="1X2", selection="1", odds=float(selections[0].get("odds", 0.0))))
-                        odds_items.append(ScrapedOddsItem(market_type="1X2", selection="X", odds=float(selections[1].get("odds", 0.0))))
-                        odds_items.append(ScrapedOddsItem(market_type="1X2", selection="2", odds=float(selections[2].get("odds", 0.0))))
+                        o1 = float(selections[0].get("odds", 0.0))
+                        ox = float(selections[1].get("odds", 0.0))
+                        o2 = float(selections[2].get("odds", 0.0))
+
+                        if o1 > 1.0 and ox > 1.0 and o2 > 1.0:
+                            # 1X2 market
+                            odds_items.append(ScrapedOddsItem(market_type="1X2", selection="1", odds=o1))
+                            odds_items.append(ScrapedOddsItem(market_type="1X2", selection="X", odds=ox))
+                            odds_items.append(ScrapedOddsItem(market_type="1X2", selection="2", odds=o2))
+
+                            # Synthetic Dupla Chance from 1X2 bookmaker margin
+                            o_1x = round((o1 * ox) / (o1 + ox), 2)
+                            o_x2 = round((ox * o2) / (ox + o2), 2)
+                            o_12 = round((o1 * o2) / (o1 + o2), 2)
+
+                            if o_1x > 1.05:
+                                odds_items.append(ScrapedOddsItem(market_type="DOUBLE_CHANCE", selection="1X", odds=o_1x))
+                            if o_x2 > 1.05:
+                                odds_items.append(ScrapedOddsItem(market_type="DOUBLE_CHANCE", selection="X2", odds=o_x2))
+                            if o_12 > 1.05:
+                                odds_items.append(ScrapedOddsItem(market_type="DOUBLE_CHANCE", selection="12", odds=o_12))
 
                     if odds_items:
                         results.append(ScrapedMatch(
                             bookmaker=self.bookmaker_name,
                             home_team=normalize_team_name(home_team),
                             away_team=normalize_team_name(away_team),
-                            league=league_name,
+                            league=comp_name,
                             kickoff=kickoff,
                             odds=odds_items,
                             raw_data={"betclic_match_id": match.get("matchId")}

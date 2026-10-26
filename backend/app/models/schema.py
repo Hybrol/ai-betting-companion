@@ -70,6 +70,9 @@ class Prediction(Base):
     kelly_stake_percent = Column(Float, nullable=False) # recommended stake %
     recommended_stake = Column(Float, nullable=False)   # recommended stake in EUR
     
+    confidence = Column(String(32), default="MÉDIA")    # "ALTA", "MÉDIA", "MUITO ALTA"
+    reasoning = Column(Text, nullable=True)             # 1-2 line expert tipster reasoning
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
     match = relationship("Match", back_populates="predictions")
@@ -93,6 +96,9 @@ class PaperBet(Base):
     status = Column(Enum(BetStatus), default=BetStatus.PENDING, nullable=False, index=True)
     payout = Column(Float, default=0.0)
     profit_loss = Column(Float, default=0.0)
+    
+    confidence = Column(String(32), default="MÉDIA")
+    reasoning = Column(Text, nullable=True)
     
     placed_at = Column(DateTime, default=datetime.utcnow, index=True)
     resolved_at = Column(DateTime, nullable=True)

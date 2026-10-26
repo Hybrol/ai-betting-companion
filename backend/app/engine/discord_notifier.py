@@ -5,19 +5,41 @@ from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
+MARKET_LABELS_PT = {
+    "1X2": "1X2 (Resultado Final)",
+    "DOUBLE_CHANCE": "Dupla Chance / Hipótese Dupla",
+    "OVER_UNDER_1_5": "Total de Golos (Mais/Menos 1.5)",
+    "OVER_UNDER_2_5": "Total de Golos (Mais/Menos 2.5)",
+    "OVER_UNDER_3_5": "Total de Golos (Mais/Menos 3.5)",
+    "BTTS": "Ambas as Equipas Marcam",
+}
+
+SELECTION_LABELS_PT = {
+    "1": "Vitória Casa (1)",
+    "X": "Empate (X)",
+    "2": "Vitória Fora (2)",
+    "1X": "1X (Casa ou Empate)",
+    "X2": "X2 (Empate ou Fora)",
+    "12": "12 (Casa ou Fora)",
+    "OVER": "Mais de (Over)",
+    "UNDER": "Menos de (Under)",
+    "YES": "Sim (Ambas Marcam)",
+    "NO": "Não (Pelo menos uma não marca)",
+}
+
 class DiscordNotifier:
     @staticmethod
-    async def send_webhook_message(embed: dict, content: str = "") -> bool:
+    async def send_webhook_message(embeds: list[dict], content: str = "") -> bool:
         webhook_url = settings.DISCORD_WEBHOOK_URL
         if not webhook_url:
-            logger.info("Discord Webhook URL not configured. Skipping Discord notification.")
+            logger.debug("Discord Webhook URL not configured. Skipping webhook.")
             return False
 
         payload = {
-            "username": "AI Betting Companion PT",
+            "username": "AI Tipster de Elite (SRIJ)",
             "avatar_url": "https://img.icons8.com/color/96/football2--v1.png",
             "content": content,
-            "embeds": [embed]
+            "embeds": embeds
         }
 
         try:
@@ -40,7 +62,7 @@ class DiscordNotifier:
         away_team: str,
         league: str,
         kickoff: datetime,
-        odds_by_bookmaker: dict[str, dict[str, float]], # {"Betclic": {"1": 8.75, "X": 5.4, "2": 1.31}, "Betano": {...}}
+        market_type: str,
         selection: str,
         best_bookmaker: str,
         best_odds: float,
@@ -48,75 +70,111 @@ class DiscordNotifier:
         fair_odds: float,
         ev_percent: float,
         recommended_stake: float,
+        confidence: str = "MÉDIA",
+        reasoning: str = "",
         auto_bet_placed: bool = False
     ) -> bool:
-        # Format odds table comparison across all casinos
-        comparison_lines = []
-        for bookie, odds in odds_by_bookmaker.items():
-            o1 = f"{odds.get('1', 0.0):.2f}" if "1" in odds else "-"
-            ox = f"{odds.get('X', 0.0):.2f}" if "X" in odds else "-"
-            o2 = f"{odds.get('2', 0.0):.2f}" if "2" in odds else "-"
-            
-            icon = "🔴" if "betclic" in bookie.lower() else "🟠" if "betano" in bookie.lower() else "🟢"
-            comparison_lines.append(f"{icon} **{bookie}** — `1:` **{o1}** | `X:` **{ox}** | `2:` **{o2}**")
+        kickoff_str = kickoff.strftime("%d/%m/%Y às %H:%M")
+        market_name = MARKET_LABELS_PT.get(market_type, market_type)
+        sel_name = SELECTION_LABELS_PT.get(selection, selection)
 
-        odds_comparison_text = "\n".join(comparison_lines) if comparison_lines else "Odds comparison not available"
-
-        kickoff_str = kickoff.strftime("%Y-%m-%d %H:%M UTC")
+        color = 0x10b981 if confidence == "ALTA" else 0x3b82f6 # Emerald or Blue
 
         embed = {
-            "title": f"🎯 High Value Bet Alert: {home_team} vs {away_team}",
+            "title": f"🎯 Aposta de Valor: {home_team} vs {away_team}",
             "description": (
-                f"**Competition:** `{league}`\n"
-                f"**Kickoff:** `{kickoff_str}`\n\n"
-                f"### 🎰 Odds Comparison by Casino\n"
-                f"{odds_comparison_text}\n\n"
-                f"### 💡 AI Value Recommendation\n"
-                f"• **Recommended Pick:** Selection **`{selection}`**\n"
-                f"• **Best Market Odds:** **`{best_odds:.2f}`** at **{best_bookmaker}**\n"
-                f"• **Fair Model Odds:** **`{fair_odds:.2f}`** ({model_prob * 100:.1f}% True Prob)\n"
-                f"• **Expected Value (+EV):** **`+{ev_percent:.1f}%`**\n"
-                f"• **Recommended Stake:** **`{recommended_stake:.2f} €`** (Fractional Kelly)\n"
+                f"⚽ **Jogo + Hora:** `{home_team} vs {away_team}` • **{kickoff_str}**\n"
+                f"🏆 **Competição:** `{league}`\n"
+                f"📋 **Mercado Exato:** `{market_name}` — **{sel_name}**\n"
+                f"💰 **Odd + Casa:** **`{best_odds:.2f}`** na **{best_bookmaker}** (SRIJ)\n\n"
+                f"📊 **Análise Quantitativa:**\n"
+                f"• Odd Justa Calculada: `{fair_odds:.2f}` (Prob: `{model_prob * 100:.1f}%`)\n"
+                f"• Margem (+EV): **`+{ev_percent:.1f}%`** | Stake Sugerida: **`{recommended_stake:.2f} €`**\n\n"
+                f"💡 **Nível de Confiança & Razão do Valor:**\n"
+                f"> **Confiança {confidence}:** {reasoning if reasoning else 'Edge estatístico verificado face ao modelo de mercado.'}\n"
             ),
-            "color": 0x10b981, # Emerald green
+            "color": color,
             "fields": [
                 {
-                    "name": "⚡ Auto-Bet Status",
-                    "value": "✅ **Simulated Paper Bet Placed!** Fictional stake deducted." if auto_bet_placed else "ℹ️ Manual bet simulation available on dashboard.",
+                    "name": "⚡ Estado da Paper Bet",
+                    "value": "✅ **Aposta simulada registada na banca virtual!**" if auto_bet_placed else "ℹ️ Análise disponível no dashboard.",
                     "inline": False
                 }
             ],
             "footer": {
-                "text": "Portuguese AI Betting Companion • 30-min Cron Monitor"
+                "text": f"{settings.RESPONSIBLE_GAMBLING_MSG} • AI Betting Companion"
             },
             "timestamp": datetime.utcnow().isoformat()
         }
 
-        return await cls.send_webhook_message(embed=embed)
+        return await cls.send_webhook_message(embeds=[embed])
+
+    @classmethod
+    async def notify_curated_multiple(cls, multiple_data: dict) -> bool:
+        if not multiple_data or multiple_data.get("legs_count", 0) < 2:
+            return False
+
+        legs = multiple_data.get("legs", [])
+        legs_text = []
+        for i, leg in enumerate(legs, 1):
+            mkt = MARKET_LABELS_PT.get(leg["market"], leg["market"])
+            sel = SELECTION_LABELS_PT.get(leg["selection"], leg["selection"])
+            conf_icon = "🟢" if leg["confidence"] == "ALTA" else "🔵"
+            legs_text.append(
+                f"**{i}. {leg['match']}**\n"
+                f"   • Mercado: `{mkt}` — `{sel}`\n"
+                f"   • Odd: **`{leg['odds']:.2f}`** na **{leg['bookmaker']}** {conf_icon} *Confiança {leg['confidence']}*\n"
+                f"   • *{leg['reasoning']}*"
+            )
+
+        description = (
+            f"Combinação de valor selecionada com base no modelo Dixon-Coles e consenso de mercado SRIJ:\n\n"
+            + "\n\n".join(legs_text) + "\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 **Odd Total Combinada:** **`{multiple_data['total_odds']:.2f}`** (Odd Justa: `{multiple_data['fair_odds']:.2f}`)\n"
+            f"🎯 **Probabilidade Estimada:** `{multiple_data['combined_prob_percent']}%` | Edge: **`+{multiple_data['combined_ev_percent']}%`**\n"
+            f"💵 **Stake Controlada:** **`{multiple_data['recommended_stake']:.2f} €`** ➜ Potencial Retorno: **`{multiple_data['potential_payout']:.2f} €`**\n"
+        )
+
+        embed = {
+            "title": f"💎 Múltipla de Valor do Dia ({multiple_data['legs_count']} Seleções)",
+            "description": description,
+            "color": 0x8b5cf6, # Purple / Diamond
+            "footer": {
+                "text": f"{settings.RESPONSIBLE_GAMBLING_MSG} • AI Betting Companion"
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        return await cls.send_webhook_message(embeds=[embed])
 
     @classmethod
     async def send_test_notification(cls, webhook_url: str | None = None) -> tuple[bool, str]:
         url = webhook_url or settings.DISCORD_WEBHOOK_URL
         if not url:
-            return False, "No webhook URL provided"
+            return False, "Nenhum URL de webhook configurado"
 
         embed = {
-            "title": "✅ AI Betting Companion: Discord Alerts Active",
-            "description": "Your 30-minute betting opportunity cron monitor has successfully connected to this channel!",
+            "title": "✅ AI Tipster de Elite: Notificações Ativas",
+            "description": (
+                "O bot de apostas de valor para casas portuguesas (SRIJ) está conectado a este canal.\n\n"
+                "**Ligas Prioritárias Ativas:**\n"
+                "• Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Liga Portugal\n"
+                "• Champions League, Europa League, Conference League\n"
+                "• Saudi Pro League, UAE Pro League, Qatar Stars League\n\n"
+                "**Mercados Analisados:**\n"
+                "• 1X2, Dupla Chance, Over/Under 1.5/2.5/3.5, Ambas Marcam (BTTS)\n\n"
+                f"*{settings.RESPONSIBLE_GAMBLING_MSG}*"
+            ),
             "color": 0x10b981,
-            "fields": [
-                {"name": "Status", "value": "🟢 Online & Monitoring", "inline": True},
-                {"name": "Target Bookmakers", "value": "Betclic.pt • Betano.pt • Solverde.pt", "inline": True},
-                {"name": "Scan Frequency", "value": f"Every {settings.CRON_INTERVAL_MINUTES} minutes", "inline": True},
-            ],
             "footer": {
-                "text": "Portuguese AI Betting Companion"
+                "text": "Portuguese AI Betting Companion • Monitorização 24/7"
             },
             "timestamp": datetime.utcnow().isoformat()
         }
 
         payload = {
-            "username": "AI Betting Companion PT",
+            "username": "AI Tipster de Elite (SRIJ)",
             "embeds": [embed]
         }
 
@@ -124,8 +182,8 @@ class DiscordNotifier:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.post(url, json=payload)
                 if res.status_code in (200, 204):
-                    return True, "Notification sent successfully!"
+                    return True, "Mensagem de teste enviada com sucesso!"
                 else:
-                    return False, f"HTTP Error {res.status_code}: {res.text}"
+                    return False, f"Erro HTTP {res.status_code}: {res.text}"
         except Exception as e:
             return False, str(e)

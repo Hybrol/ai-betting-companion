@@ -44,7 +44,9 @@ class PaperTrader:
         selection: str,
         odds: float,
         stake: float,
-        prediction_id: int | None = None
+        prediction_id: int | None = None,
+        confidence: str = "MÉDIA",
+        reasoning: str | None = None
     ) -> PaperBet:
         br = cls.get_or_create_bankroll(db)
 
@@ -66,6 +68,8 @@ class PaperTrader:
             stake=stake,
             potential_payout=round(stake * odds, 2),
             status=BetStatus.PENDING,
+            confidence=confidence,
+            reasoning=reasoning,
             placed_at=datetime.utcnow()
         )
         db.add(bet)
@@ -125,13 +129,22 @@ class PaperTrader:
 
             if bet.market_type == "1X2":
                 is_win = (bet.selection.upper() == winning_1x2)
-            elif bet.market_type == "OVER_UNDER_2_5":
-                if bet.selection.upper() == "OVER":
-                    is_win = (total_goals > 2.5)
-                else:
-                    is_win = (total_goals < 2.5)
+            elif bet.market_type == "DOUBLE_CHANCE":
+                sel = bet.selection.upper()
+                if sel == "1X":
+                    is_win = (home_score >= away_score)
+                elif sel == "X2":
+                    is_win = (away_score >= home_score)
+                elif sel == "12":
+                    is_win = (home_score != away_score)
+            elif bet.market_type in ("OVER_UNDER_2_5", "OVER_UNDER"):
+                is_win = (total_goals > 2.5) if bet.selection.upper() == "OVER" else (total_goals < 2.5)
+            elif bet.market_type == "OVER_UNDER_1_5":
+                is_win = (total_goals > 1.5) if bet.selection.upper() == "OVER" else (total_goals < 1.5)
+            elif bet.market_type == "OVER_UNDER_3_5":
+                is_win = (total_goals > 3.5) if bet.selection.upper() == "OVER" else (total_goals < 3.5)
             elif bet.market_type == "BTTS":
-                if bet.selection.upper() == "YES":
+                if bet.selection.upper() in ("YES", "SIM"):
                     is_win = (home_score > 0 and away_score > 0)
                 else:
                     is_win = (home_score == 0 or away_score == 0)

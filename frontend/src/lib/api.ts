@@ -39,6 +39,7 @@ export interface MatchItem {
   }>;
   predictions: Array<{
     id: number;
+    market_type?: string;
     selection: string;
     model_prob: number;
     fair_odds: number;
@@ -46,6 +47,8 @@ export interface MatchItem {
     best_odds: number;
     ev_percent: number;
     recommended_stake: number;
+    confidence?: string;
+    reasoning?: string;
   }>;
 }
 
@@ -65,6 +68,28 @@ export interface ValueBetItem {
   ev_percent: number;
   kelly_stake_percent: number;
   recommended_stake: number;
+  confidence?: string;
+  reasoning?: string;
+}
+
+export interface CuratedMultiple {
+  legs_count: number;
+  total_odds: number;
+  fair_odds: number;
+  combined_ev_percent: number;
+  combined_prob_percent: number;
+  recommended_stake: number;
+  potential_payout: number;
+  legs: Array<{
+    match: string;
+    league: string;
+    market: string;
+    selection: string;
+    bookmaker: string;
+    odds: number;
+    confidence: string;
+    reasoning: string;
+  }>;
 }
 
 export interface PaperBetItem {
@@ -81,6 +106,8 @@ export interface PaperBetItem {
   potential_payout: number;
   status: "PENDING" | "GREEN" | "RED" | "VOID";
   profit_loss: number;
+  confidence?: string;
+  reasoning?: string;
   placed_at: string;
   resolved_at?: string;
 }
@@ -209,4 +236,15 @@ export async function triggerCronCycleNow(): Promise<any> {
   const res = await fetch(`${API_BASE_URL}/settings/run-cycle`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to run cron cycle");
   return res.json();
+}
+
+export async function fetchCuratedMultiple(): Promise<CuratedMultiple | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/predictions/curated-multiple`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.legs_count ? data : null;
+  } catch {
+    return null;
+  }
 }

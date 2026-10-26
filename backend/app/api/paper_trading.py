@@ -76,6 +76,8 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
             "potential_payout": b.potential_payout,
             "status": b.status.value,
             "profit_loss": b.profit_loss,
+            "confidence": getattr(b, "confidence", "MÉDIA") or "MÉDIA",
+            "reasoning": getattr(b, "reasoning", "") or "",
             "placed_at": b.placed_at.isoformat(),
             "resolved_at": b.resolved_at.isoformat() if b.resolved_at else None
         }

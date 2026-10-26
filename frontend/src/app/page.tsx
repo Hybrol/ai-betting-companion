@@ -19,11 +19,13 @@ import StatCard from "@/components/StatCard";
 import BankrollChart from "@/components/BankrollChart";
 import BetModal from "@/components/BetModal";
 import SettingsModal from "@/components/SettingsModal";
-import { fetchStats, fetchValueBets, fetchSettings, resetBankroll, DashboardStats, ValueBetItem, SystemSettings } from "@/lib/api";
+import { fetchStats, fetchValueBets, fetchSettings, fetchCuratedMultiple, resetBankroll, DashboardStats, ValueBetItem, SystemSettings, CuratedMultiple } from "@/lib/api";
+import { ShieldAlert, Layers } from "lucide-react";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [topValues, setTopValues] = useState<ValueBetItem[]>([]);
+  const [curatedMultiple, setCuratedMultiple] = useState<CuratedMultiple | null>(null);
   const [sysSettings, setSysSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedBet, setSelectedBet] = useState<ValueBetItem | null>(null);
@@ -32,10 +34,16 @@ export default function DashboardPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [s, v, set] = await Promise.all([fetchStats(), fetchValueBets(3.0), fetchSettings()]);
+      const [s, v, set, mult] = await Promise.all([
+        fetchStats(),
+        fetchValueBets(3.5),
+        fetchSettings(),
+        fetchCuratedMultiple()
+      ]);
       setStats(s);
-      setTopValues(v.slice(0, 5));
+      setTopValues(v.slice(0, 6));
       setSysSettings(set);
+      setCuratedMultiple(mult);
     } catch (err) {
       console.error(err);
     } finally {
@@ -151,6 +159,51 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Curated Multiple Banner (if available) */}
+      {curatedMultiple && (
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-slate-900/60 border border-purple-500/30 shadow-lg backdrop-blur">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                <Layers className="w-5 h-5" />
+              </span>
+              <div>
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>Múltipla de Valor do Dia</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    {curatedMultiple.legs_count} Seleções SRIJ
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Combinação ótima com edge positivo (+{curatedMultiple.combined_ev_percent}% EV)
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-purple-500/20 text-xs">
+              <div>
+                <span className="text-slate-400">Odd:</span> <strong className="text-purple-400">{curatedMultiple.total_odds.toFixed(2)}</strong>
+              </div>
+              <div className="h-4 w-px bg-slate-800" />
+              <div>
+                <span className="text-slate-400">Stake:</span> <strong className="text-emerald-400">{curatedMultiple.recommended_stake.toFixed(2)} €</strong>
+              </div>
+              <div className="h-4 w-px bg-slate-800" />
+              <div>
+                <span className="text-slate-400">Retorno:</span> <strong className="text-white">{curatedMultiple.potential_payout.toFixed(2)} €</strong>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {curatedMultiple.legs.map((leg, idx) => (
+              <div key={idx} className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-xs">
+                <div className="font-bold text-white truncate">{leg.match}</div>
+                <div className="text-[11px] text-slate-400">{leg.market}: <strong className="text-emerald-400">{leg.selection} @ {leg.odds.toFixed(2)}</strong> ({leg.bookmaker})</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Top Value Bets Section */}
       <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm backdrop-blur">
         <div className="flex items-center justify-between mb-4">
@@ -235,6 +288,12 @@ export default function DashboardPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Responsible Gaming Footer Note */}
+      <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+        <ShieldAlert className="w-4 h-4 text-amber-500" />
+        <span>Aposta sempre com responsabilidade. Proibido a menores de 18 anos (+18). Linha de Apoio SICAD: 1414.</span>
       </div>
 
       {selectedBet && (

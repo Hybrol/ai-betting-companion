@@ -9,9 +9,10 @@ from ..core.database import SessionLocal
 from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus
 from ..engine.normalizer import create_match_key
 from ..engine.predictor import MatchPredictor
-from ..engine.value_finder import ValueFinder
+from ..engine.value_finder import ValueFinder, ValueOpportunity
 from ..engine.paper_trader import PaperTrader
 from ..engine.auto_bettor import AutoBettor
+from ..engine.discord_notifier import DiscordNotifier
 from ..scrapers.betclic import BetclicScraper
 from ..scrapers.betano import BetanoScraper
 from ..scrapers.solverde import SolverdeScraper
@@ -22,14 +23,15 @@ scheduler = AsyncIOScheduler()
 
 async def execute_betting_cycle(target_league: str | None = None):
     """
-    Core inspection cycle executed every 30 minutes:
-    1. Scrapes odds from Betclic, Betano, and Solverde across leagues.
-    2. Runs AI Poisson + market consensus predictive modeling.
-    3. Identifies +EV value bets with Kelly stakes.
-    4. Auto-places simulated paper wagers on top opportunities.
-    5. Dispatches Discord notifications with side-by-side odds across each casino.
+    Elite Quantitative Betting Cycle (runs every 30 minutes):
+    1. Scrapes legal Portuguese sportsbooks (Betclic, Betano, Solverde) across European & Arab leagues.
+    2. Runs Dixon-Coles goal expectation modeling and consensus market de-vigging.
+    3. Evaluates multi-market edges (1X2, Dupla Chance, Over/Under 1.5/2.5/3.5, Ambas Marcam).
+    4. Enforces professional odds bounds (1.40 - 4.50, min 22% prob, +3.5% EV min).
+    5. Deduplicates bets (max 1 bet per match across all houses) with 25% portfolio exposure ceiling.
+    6. Assembles daily curated Múltipla de Valor and dispatches rich Portuguese alerts.
     """
-    logger.info("=== [CRON] Starting 30-Minute AI Betting Inspection Cycle ===")
+    logger.info("=== [CRON] Starting Elite AI Betting Inspection Cycle ===")
     db: Session = SessionLocal()
 
     try:
@@ -39,6 +41,7 @@ async def execute_betting_cycle(target_league: str | None = None):
         br = PaperTrader.get_or_create_bankroll(db)
         current_bankroll = br.current_balance
 
+        all_cycle_opportunities: list[ValueOpportunity] = []
         total_new_opportunities = 0
         total_auto_bets = 0
 
@@ -50,7 +53,7 @@ async def execute_betting_cycle(target_league: str | None = None):
                     matches = await scraper.fetch_league_matches(league)
                     all_scraped.extend(matches)
                 except Exception as e:
-                    logger.error(f"[CRON] Scraper {scraper.bookmaker_name} failed on {league}: {e}")
+                    logger.debug(f"[CRON] Scraper {scraper.bookmaker_name} note on {league}: {e}")
 
             for sm in all_scraped:
                 m_key = create_match_key(sm.home_team, sm.away_team, sm.kickoff.isoformat())
@@ -61,14 +64,14 @@ async def execute_betting_cycle(target_league: str | None = None):
                         match_key=m_key,
                         home_team=sm.home_team,
                         away_team=sm.away_team,
-                        league=league,
+                        league=sm.league or league,
                         kickoff=sm.kickoff,
                         status=MatchStatus.SCHEDULED
                     )
                     db.add(match)
                     db.flush()
 
-                # Upsert odds
+                # Upsert all scraped odds
                 for odd_item in sm.odds:
                     existing_odd = db.query(BookmakerOdds).filter(
                         BookmakerOdds.match_id == match.id,
@@ -92,41 +95,48 @@ async def execute_betting_cycle(target_league: str | None = None):
 
                 db.commit()
 
-                # Gather all 1X2 odds for AI prediction and comparison
+                # Retrieve all match odds across all markets
                 all_odds = db.query(BookmakerOdds).filter(
-                    BookmakerOdds.match_id == match.id,
-                    BookmakerOdds.market_type == "1X2"
+                    BookmakerOdds.match_id == match.id
                 ).all()
 
-                odds_by_sel: dict[str, list[tuple[str, float]]] = {"1": [], "X": [], "2": []}
-                odds_by_bookie: dict[str, dict[str, float]] = {}
+                odds_by_market: dict[str, dict[str, list[tuple[str, float]]]] = {}
+                odds_by_bookie_1x2: dict[str, dict[str, float]] = {}
 
                 for o in all_odds:
-                    odds_by_sel.setdefault(o.selection, []).append((o.bookmaker, o.odds))
-                    odds_by_bookie.setdefault(o.bookmaker, {})[o.selection] = o.odds
+                    odds_by_market.setdefault(o.market_type, {}).setdefault(o.selection, []).append((o.bookmaker, o.odds))
+                    if o.market_type == "1X2":
+                        odds_by_bookie_1x2.setdefault(o.bookmaker, {})[o.selection] = o.odds
 
                 multi_1x2 = [
                     [b_odds.get("1", 0), b_odds.get("X", 0), b_odds.get("2", 0)]
-                    for b_odds in odds_by_bookie.values()
+                    for b_odds in odds_by_bookie_1x2.values()
                     if "1" in b_odds and "X" in b_odds and "2" in b_odds
                 ]
 
-                # Run AI goal expectation & market consensus model
-                probs = MatchPredictor.estimate_probabilities(
-                    league, match.home_team, match.away_team, multi_1x2
+                # Run Dixon-Coles goal expectation & consensus model across markets
+                model_results = MatchPredictor.compute_all_market_probabilities(
+                    match.league, match.home_team, match.away_team, multi_1x2
                 )
+                metrics = model_results.get("metrics", {})
 
-                # Scan for +EV value opportunities
+                # Scan for genuine +EV value across all markets
                 values = ValueFinder.scan_for_value(
-                    match.id, match.home_team, match.away_team, match.league,
-                    odds_by_sel, probs, current_bankroll
+                    match_id=match.id,
+                    home_team=match.home_team,
+                    away_team=match.away_team,
+                    league=match.league,
+                    odds_by_market=odds_by_market,
+                    model_probs_by_market=model_results,
+                    current_bankroll=current_bankroll,
+                    metrics=metrics
                 )
 
                 # Update prediction table
                 db.query(Prediction).filter(Prediction.match_id == match.id).delete()
-                
-                # Sort values by highest Expected Value (+EV)
-                values.sort(key=lambda x: x.ev_percent, reverse=True)
+
+                # Sort by highest expected value (+EV)
+                values.sort(key=lambda x: (1 if x.confidence == "ALTA" else 0, x.ev_percent), reverse=True)
 
                 best_prediction = None
                 for v in values:
@@ -140,30 +150,41 @@ async def execute_betting_cycle(target_league: str | None = None):
                         best_odds=v.best_odds,
                         ev_percent=v.ev_percent,
                         kelly_stake_percent=v.kelly_stake_percent,
-                        recommended_stake=v.recommended_stake
+                        recommended_stake=v.recommended_stake,
+                        confidence=v.confidence,
+                        reasoning=v.reasoning
                     )
                     db.add(p)
                     db.flush()
                     if best_prediction is None:
                         best_prediction = p
 
+                    all_cycle_opportunities.append(v)
                     total_new_opportunities += 1
 
                 db.commit()
 
-                # Strictly process ONLY the single highest-value pick for this match to avoid duplicate gambling
+                # Process strictly the single highest-value pick for this match to avoid duplicate match gambling
                 if best_prediction:
                     auto_placed = await AutoBettor.process_value_opportunity(
                         db=db,
                         match=match,
-                        prediction=best_prediction,
-                        odds_by_bookmaker=odds_by_bookie
+                        prediction=best_prediction
                     )
                     if auto_placed:
                         total_auto_bets += 1
 
+        # Curated Múltipla de Valor
+        curated_multiple = ValueFinder.build_curated_multiple(
+            opportunities=all_cycle_opportunities,
+            max_legs=3,
+            current_bankroll=current_bankroll
+        )
+        if curated_multiple and settings.DISCORD_WEBHOOK_URL:
+            await DiscordNotifier.notify_curated_multiple(curated_multiple)
+
         logger.info(
-            f"=== [CRON] Cycle Completed! Found {total_new_opportunities} +EV opportunities, "
+            f"=== [CRON] Elite Cycle Completed! Found {total_new_opportunities} quality +EV opportunities, "
             f"Placed {total_auto_bets} automated paper bets ==="
         )
     except Exception as e:
