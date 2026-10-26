@@ -10,26 +10,32 @@ import {
   RotateCcw,
   Sparkles,
   ArrowRight,
-  ShieldAlert,
+  Zap,
+  Bell,
+  Clock
 } from "lucide-react";
 import Link from "next/link";
 import StatCard from "@/components/StatCard";
 import BankrollChart from "@/components/BankrollChart";
 import BetModal from "@/components/BetModal";
-import { fetchStats, fetchValueBets, resetBankroll, DashboardStats, ValueBetItem } from "@/lib/api";
+import SettingsModal from "@/components/SettingsModal";
+import { fetchStats, fetchValueBets, fetchSettings, resetBankroll, DashboardStats, ValueBetItem, SystemSettings } from "@/lib/api";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [topValues, setTopValues] = useState<ValueBetItem[]>([]);
+  const [sysSettings, setSysSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedBet, setSelectedBet] = useState<ValueBetItem | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [s, v] = await Promise.all([fetchStats(), fetchValueBets(3.0)]);
+      const [s, v, set] = await Promise.all([fetchStats(), fetchValueBets(3.0), fetchSettings()]);
       setStats(s);
       setTopValues(v.slice(0, 5));
+      setSysSettings(set);
     } catch (err) {
       console.error(err);
     } finally {
@@ -53,6 +59,26 @@ export default function DashboardPage() {
       {/* Hero Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <span>30-min Auto Monitor Active</span>
+            </span>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1 transition"
+            >
+              <Zap className={`w-3 h-3 ${sysSettings?.auto_bet_enabled ? "text-emerald-400" : "text-slate-500"}`} />
+              <span>Auto-Bet: {sysSettings?.auto_bet_enabled ? "ON" : "OFF"}</span>
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1 transition"
+            >
+              <Bell className={`w-3 h-3 ${sysSettings?.discord_configured ? "text-indigo-400" : "text-slate-500"}`} />
+              <span>Discord: {sysSettings?.discord_configured ? "Connected" : "Not Set"}</span>
+            </button>
+          </div>
           <h1 className="text-3xl font-black text-white tracking-tight">Paper-Trading Dashboard</h1>
           <p className="text-sm text-slate-400 mt-1">
             Real-time odds analysis for Solverde &bull; Betclic &bull; Betano with fictional bankroll simulation
@@ -223,6 +249,14 @@ export default function DashboardPage() {
           odds={selectedBet.best_odds}
           recommendedStake={selectedBet.recommended_stake}
           predictionId={selectedBet.id}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsModal
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={loadData}
         />
       )}
     </div>

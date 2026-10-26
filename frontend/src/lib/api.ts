@@ -83,6 +83,17 @@ export interface PaperBetItem {
   resolved_at?: string;
 }
 
+export interface SystemSettings {
+  auto_bet_enabled: boolean;
+  cron_interval_minutes: number;
+  discord_configured: boolean;
+  discord_webhook_preview?: string;
+  min_ev_threshold: number;
+  kelly_fraction: number;
+  max_bet_percentage: number;
+  target_leagues: string[];
+}
+
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch(`${API_BASE_URL}/dashboard/stats`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch dashboard stats");
@@ -156,5 +167,44 @@ export async function resetBankroll(initial_balance = 1000): Promise<any> {
     body: JSON.stringify({ initial_balance }),
   });
   if (!res.ok) throw new Error("Failed to reset bankroll");
+  return res.json();
+}
+
+export async function fetchSettings(): Promise<SystemSettings> {
+  const res = await fetch(`${API_BASE_URL}/settings/`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch settings");
+  return res.json();
+}
+
+export async function updateSettings(data: {
+  auto_bet_enabled?: boolean;
+  discord_webhook_url?: string;
+  min_ev_threshold?: number;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/settings/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update settings");
+  return res.json();
+}
+
+export async function testDiscordWebhook(webhook_url?: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/settings/test-discord`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ webhook_url }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Discord webhook test failed");
+  }
+  return res.json();
+}
+
+export async function triggerCronCycleNow(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/settings/run-cycle`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to run cron cycle");
   return res.json();
 }

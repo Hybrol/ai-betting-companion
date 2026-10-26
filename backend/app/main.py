@@ -6,6 +6,7 @@ from .core.config import settings
 from .core.database import Base, engine, SessionLocal
 from .api.router import api_router
 from .engine.paper_trader import PaperTrader
+from .engine.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,8 +23,14 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
         
+    # Start the 30-minute recurring scheduler
+    logger.info(f"Starting 30-minute betting inspection scheduler (interval: {settings.CRON_INTERVAL_MINUTES}m)...")
+    start_scheduler()
+    
     yield
-    logger.info("Shutting down...")
+    
+    logger.info("Shutting down background scheduler...")
+    stop_scheduler()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -31,7 +38,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for full-stack Next.js / React frontend
+# Enable CORS for full-stack Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -47,6 +54,9 @@ def root():
     return {
         "name": settings.PROJECT_NAME,
         "version": settings.VERSION,
+        "auto_bet_enabled": settings.AUTO_BET_ENABLED,
+        "cron_interval_minutes": settings.CRON_INTERVAL_MINUTES,
+        "discord_configured": bool(settings.DISCORD_WEBHOOK_URL),
         "docs_url": "/docs",
         "api_v1": settings.API_V1_STR
     }
