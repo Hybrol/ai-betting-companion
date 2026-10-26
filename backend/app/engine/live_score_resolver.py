@@ -97,7 +97,7 @@ class LiveScoreResolver:
             active_matches = db.query(Match).filter(
                 (Match.id.in_(pending_ids)) | (
                     (func.date(Match.kickoff) == today_str) & 
-                    (Match.status.in_([MatchStatus.SCHEDULED, MatchStatus.IN_PLAY]))
+                    (Match.status.in_([MatchStatus.SCHEDULED, MatchStatus.LIVE]))
                 )
             ).all()
 
@@ -193,10 +193,10 @@ class LiveScoreResolver:
                                         current_balance=br.current_balance
                                     )
                         elif state == "in":
-                            if match.status != MatchStatus.IN_PLAY:
-                                match.status = MatchStatus.IN_PLAY
+                            if match.status != MatchStatus.LIVE:
+                                match.status = MatchStatus.LIVE
                                 logger.info(
-                                    f"[LIVE RESOLVER] Match IN PLAY ({clock_desc}): {match.home_team} {h_score} - {a_score} {match.away_team}"
+                                    f"[LIVE RESOLVER] Match LIVE ({clock_desc}): {match.home_team} {h_score} - {a_score} {match.away_team}"
                                 )
                             db.commit()
                         break

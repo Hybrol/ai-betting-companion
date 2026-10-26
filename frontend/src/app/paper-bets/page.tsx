@@ -163,7 +163,7 @@ export default function PaperBetsPage() {
                               {b.home_score} - {b.away_score}
                             </span>
                           )}
-                          {b.match_status === "IN_PLAY" && (
+                          {(b.match_status === "LIVE" || b.match_status === "IN_PLAY") && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
                               AO VIVO
                             </span>
