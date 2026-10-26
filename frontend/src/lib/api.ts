@@ -129,8 +129,13 @@ export async function fetchStats(): Promise<DashboardStats> {
   return res.json();
 }
 
-export async function fetchMatches(league?: string): Promise<MatchItem[]> {
-  const url = league ? `${API_BASE_URL}/matches?league=${encodeURIComponent(league)}` : `${API_BASE_URL}/matches`;
+export async function fetchMatches(league?: string, todayOnly = false): Promise<MatchItem[]> {
+  let url = `${API_BASE_URL}/matches`;
+  const params = new URLSearchParams();
+  if (league) params.append("league", league);
+  if (todayOnly) params.append("today_only", "true");
+  const qs = params.toString();
+  if (qs) url += `?${qs}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch matches");
   return res.json();
@@ -143,9 +148,15 @@ export async function syncMatches(league?: string): Promise<{ message: string }>
   return res.json();
 }
 
-export async function fetchValueBets(minEv = 3.0, league?: string): Promise<ValueBetItem[]> {
-  let url = `${API_BASE_URL}/predictions/value-bets?min_ev=${minEv}`;
+export async function fetchValueBets(
+  minEv = 3.5,
+  league?: string,
+  todayOnly = true,
+  targetDate?: string
+): Promise<ValueBetItem[]> {
+  let url = `${API_BASE_URL}/predictions/value-bets?min_ev=${minEv}&today_only=${todayOnly}`;
   if (league) url += `&league=${encodeURIComponent(league)}`;
+  if (targetDate) url += `&target_date=${encodeURIComponent(targetDate)}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch value bets");
   return res.json();
@@ -238,9 +249,9 @@ export async function triggerCronCycleNow(): Promise<any> {
   return res.json();
 }
 
-export async function fetchCuratedMultiple(): Promise<CuratedMultiple | null> {
+export async function fetchCuratedMultiple(todayOnly = true): Promise<CuratedMultiple | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/predictions/curated-multiple`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE_URL}/predictions/curated-multiple?today_only=${todayOnly}`, { cache: "no-store" });
     if (!res.ok) return null;
     const data = await res.json();
     return data?.legs_count ? data : null;

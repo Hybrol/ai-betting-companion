@@ -36,9 +36,9 @@ export default function DashboardPage() {
       setLoading(true);
       const [s, v, set, mult] = await Promise.all([
         fetchStats(),
-        fetchValueBets(3.5),
+        fetchValueBets(3.5, undefined, true),
         fetchSettings(),
-        fetchCuratedMultiple()
+        fetchCuratedMultiple(true)
       ]);
       setStats(s);
       setTopValues(v.slice(0, 6));
@@ -210,10 +210,13 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-400" />
-              <span>Top AI Value Opportunities (+EV)</span>
+              <span>Value Bets de Hoje (+EV)</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Hoje
+              </span>
             </h2>
             <p className="text-xs text-slate-400">
-              Matches with highest statistical expected value based on Poisson modeling & Kelly stakes
+              Oportunidades com valor estatístico positivo (+EV) exclusivas para os jogos do dia de hoje
             </p>
           </div>
           <Link

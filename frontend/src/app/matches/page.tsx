@@ -19,6 +19,7 @@ const LEAGUES = [
 export default function MatchesPage() {
   const [matches, setMatches] = useState<MatchItem[]>([]);
   const [selectedLeague, setSelectedLeague] = useState("All Leagues");
+  const [todayOnly, setTodayOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [resolvingMatch, setResolvingMatch] = useState<MatchItem | null>(null);
@@ -34,7 +35,7 @@ export default function MatchesPage() {
     try {
       setLoading(true);
       const leagueParam = selectedLeague === "All Leagues" ? undefined : selectedLeague;
-      const data = await fetchMatches(leagueParam);
+      const data = await fetchMatches(leagueParam, todayOnly);
       setMatches(data);
     } catch (err) {
       console.error(err);
@@ -45,7 +46,7 @@ export default function MatchesPage() {
 
   useEffect(() => {
     loadMatches();
-  }, [selectedLeague]);
+  }, [selectedLeague, todayOnly]);
 
   return (
     <div className="space-y-6">
@@ -59,6 +60,31 @@ export default function MatchesPage() {
             Live 1X2 odds across Portuguese bookmakers: Betclic &bull; Betano &bull; Solverde
           </p>
         </div>
+      </div>
+
+      {/* Date Toggle */}
+      <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/60 border border-slate-800 w-fit">
+        <button
+          onClick={() => setTodayOnly(true)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+            todayOnly
+              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          <span>Jogos de Hoje</span>
+        </button>
+        <button
+          onClick={() => setTodayOnly(false)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+            !todayOnly
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <span>Todos os Jogos</span>
+        </button>
       </div>
 
       {/* Leagues Selector */}

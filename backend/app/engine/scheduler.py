@@ -4,6 +4,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from ..core.config import settings
 from ..core.database import SessionLocal
 from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus
@@ -165,7 +166,9 @@ async def execute_betting_cycle(target_league: str | None = None):
                 db.commit()
 
                 # Process strictly the single highest-value pick for this match to avoid duplicate match gambling
-                if best_prediction:
+                # Only auto-bet on matches occurring TODAY that have not started yet
+                now_utc = datetime.utcnow()
+                if best_prediction and match.kickoff.date() == now_utc.date() and match.kickoff > now_utc:
                     auto_placed = await AutoBettor.process_value_opportunity(
                         db=db,
                         match=match,
@@ -177,9 +180,40 @@ async def execute_betting_cycle(target_league: str | None = None):
                 # Yield control to event loop to keep API responsive
                 await asyncio.sleep(0.01)
 
-        # Curated Múltipla de Valor
+        # Curated Múltipla de Valor (strictly using today's upcoming matches)
+        now_utc = datetime.utcnow()
+        today_str = now_utc.strftime("%Y-%m-%d")
+        today_preds = db.query(Prediction).join(Match).filter(
+            func.date(Match.kickoff) == today_str,
+            Match.kickoff >= now_utc,
+            Prediction.ev_percent >= 3.5,
+            Prediction.best_odds >= 1.35,
+            Prediction.best_odds <= 2.80
+        ).order_by(Prediction.ev_percent.desc()).all()
+
+        today_opps = [
+            ValueOpportunity(
+                match_id=p.match_id,
+                home_team=p.match.home_team,
+                away_team=p.match.away_team,
+                league=p.match.league,
+                market_type=p.market_type,
+                selection=p.selection,
+                best_bookmaker=p.best_bookmaker,
+                best_odds=p.best_odds,
+                model_prob=p.model_prob,
+                fair_odds=p.fair_odds,
+                ev_percent=p.ev_percent,
+                kelly_stake_percent=p.kelly_stake_percent,
+                recommended_stake=p.recommended_stake,
+                confidence=getattr(p, "confidence", "MÉDIA") or "MÉDIA",
+                reasoning=getattr(p, "reasoning", "") or ""
+            )
+            for p in today_preds
+        ]
+
         curated_multiple = ValueFinder.build_curated_multiple(
-            opportunities=all_cycle_opportunities,
+            opportunities=today_opps,
             max_legs=3,
             current_bankroll=current_bankroll
         )

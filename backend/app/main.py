@@ -1,9 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from .core.config import settings
 from .core.database import Base, engine, SessionLocal
+from .models.schema import PaperBet, Match, BetStatus
 from .api.router import api_router
 from .engine.paper_trader import PaperTrader
 from .engine.scheduler import start_scheduler, stop_scheduler
@@ -35,10 +38,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"Auto-migration note: {e}")
 
-    # Initialize bankroll if empty
+    # Initialize bankroll if empty and clean up any future pending bets
     db = SessionLocal()
     try:
-        PaperTrader.get_or_create_bankroll(db)
+        br = PaperTrader.get_or_create_bankroll(db)
+
+        # Release exposure from any pending bets placed on matches scheduled for future dates
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        future_bets = db.query(PaperBet).join(Match).filter(
+            PaperBet.status == BetStatus.PENDING,
+            func.date(Match.kickoff) > today_str
+        ).all()
+        if future_bets:
+            refunded_total = 0.0
+            for fb in future_bets:
+                refunded_total += fb.stake
+                br.current_balance += fb.stake
+                br.total_staked -= fb.stake
+                br.total_bets -= 1
+                db.delete(fb)
+            db.commit()
+            logger.info(
+                f"Cleaned up {len(future_bets)} future pending paper bets. "
+                f"Refunded {refunded_total:.2f}€ to bankroll for today's matches."
+            )
+    except Exception as e:
+        logger.warning(f"Startup future bets cleanup notice: {e}")
     finally:
         db.close()
         

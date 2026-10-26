@@ -1,4 +1,6 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..models.schema import Prediction, Match
@@ -11,14 +13,23 @@ router = APIRouter(prefix="/predictions", tags=["Predictions"])
 def get_value_bets(
     min_ev: float = Query(3.5, description="Minimum EV percentage"),
     league: str | None = Query(None),
+    today_only: bool = Query(True, description="Filter strictly for today's matches"),
+    target_date: str | None = Query(None, description="Specific date in YYYY-MM-DD format"),
     db: Session = Depends(get_db)
 ):
     """
     Returns AI-identified value bets with confidence level and expert tipster rationale.
+    By default, restricts recommendations strictly to today's matches.
     """
     query = db.query(Prediction).join(Match).filter(Prediction.ev_percent >= min_ev)
     if league:
         query = query.filter(Match.league == league)
+
+    if target_date:
+        query = query.filter(func.date(Match.kickoff) == target_date)
+    elif today_only:
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        query = query.filter(func.date(Match.kickoff) == today_str)
 
     preds = query.order_by(Prediction.ev_percent.desc()).all()
 
@@ -47,16 +58,28 @@ def get_value_bets(
     return results
 
 @router.get("/curated-multiple")
-def get_curated_multiple(db: Session = Depends(get_db)):
+def get_curated_multiple(
+    today_only: bool = Query(True, description="Only legs from today's matches"),
+    db: Session = Depends(get_db)
+):
     """
-    Returns the daily curated Múltipla de Valor (Acca).
+    Returns the daily curated Múltipla de Valor (Acca), restricted to today's matches.
     """
     br = PaperTrader.get_or_create_bankroll(db)
-    preds = db.query(Prediction).join(Match).filter(
+    query = db.query(Prediction).join(Match).filter(
         Prediction.ev_percent >= 3.5,
         Prediction.best_odds >= 1.35,
         Prediction.best_odds <= 2.80
-    ).order_by(Prediction.ev_percent.desc()).all()
+    )
+
+    if today_only:
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        query = query.filter(
+            func.date(Match.kickoff) == today_str,
+            Match.kickoff >= datetime.utcnow()
+        )
+
+    preds = query.order_by(Prediction.ev_percent.desc()).all()
 
     opps = [
         ValueOpportunity(

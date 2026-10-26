@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Award, Filter, Sparkles, TrendingUp, Layers, CheckCircle2, ShieldAlert } from "lucide-react";
+import { Award, Filter, Sparkles, TrendingUp, Layers, CheckCircle2, ShieldAlert, Calendar } from "lucide-react";
 import BetModal from "@/components/BetModal";
 import { fetchValueBets, fetchCuratedMultiple, ValueBetItem, CuratedMultiple } from "@/lib/api";
 
@@ -34,6 +34,7 @@ export default function ValueBetsPage() {
   const [valueBets, setValueBets] = useState<ValueBetItem[]>([]);
   const [curatedMultiple, setCuratedMultiple] = useState<CuratedMultiple | null>(null);
   const [selectedLeague, setSelectedLeague] = useState("All Leagues");
+  const [todayOnly, setTodayOnly] = useState(true);
   const [minEv, setMinEv] = useState(3.5);
   const [loading, setLoading] = useState(true);
   const [selectedBet, setSelectedBet] = useState<ValueBetItem | null>(null);
@@ -43,8 +44,8 @@ export default function ValueBetsPage() {
       setLoading(true);
       const leagueParam = selectedLeague === "All Leagues" ? undefined : selectedLeague;
       const [bets, multiple] = await Promise.all([
-        fetchValueBets(minEv, leagueParam),
-        fetchCuratedMultiple()
+        fetchValueBets(minEv, leagueParam, todayOnly),
+        fetchCuratedMultiple(todayOnly)
       ]);
       setValueBets(bets);
       setCuratedMultiple(multiple);
@@ -57,7 +58,7 @@ export default function ValueBetsPage() {
 
   useEffect(() => {
     loadBets();
-  }, [selectedLeague, minEv]);
+  }, [selectedLeague, minEv, todayOnly]);
 
   return (
     <div className="space-y-6">
@@ -139,6 +140,45 @@ export default function ValueBetsPage() {
           </div>
         </div>
       )}
+
+      {/* Date Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-850">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setTodayOnly(true)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              todayOnly
+                ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                : "bg-slate-800 text-slate-400 hover:text-white"
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Jogos de Hoje</span>
+            {todayOnly && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-950 text-emerald-300 font-extrabold border border-emerald-500/30">
+                Hoje
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setTodayOnly(false)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+              !todayOnly
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                : "bg-slate-800 text-slate-400 hover:text-white"
+            }`}
+          >
+            <span>Todas as Datas</span>
+          </button>
+        </div>
+        <div className="text-xs text-slate-400">
+          {todayOnly ? (
+            <span className="text-emerald-400 font-semibold">✓ Apenas recomendações de jogos para o dia de hoje</span>
+          ) : (
+            <span className="text-slate-400">A exibir todas as oportunidades futuras na base de dados</span>
+          )}
+        </div>
+      </div>
 
       {/* Filters Bar */}
       <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-4">

@@ -1,5 +1,6 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, BackgroundTasks
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus
@@ -15,6 +16,8 @@ async def run_sync_task(db: Session, target_league: str | None = None):
 def list_matches(
     league: str | None = Query(None),
     status: str | None = Query(None),
+    today_only: bool = Query(False, description="Filter for today's matches"),
+    target_date: str | None = Query(None, description="Filter by YYYY-MM-DD"),
     db: Session = Depends(get_db)
 ):
     query = db.query(Match)
@@ -22,6 +25,11 @@ def list_matches(
         query = query.filter(Match.league == league)
     if status:
         query = query.filter(Match.status == status)
+    if target_date:
+        query = query.filter(func.date(Match.kickoff) == target_date)
+    elif today_only:
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        query = query.filter(func.date(Match.kickoff) == today_str)
 
     matches = query.order_by(Match.kickoff.asc()).all()
 

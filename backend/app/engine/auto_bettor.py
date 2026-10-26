@@ -30,6 +30,21 @@ class AutoBettor:
         """
         now = datetime.utcnow()
 
+        # Strictly limit automated bets to matches happening TODAY
+        if match.kickoff.date() != now.date():
+            logger.debug(
+                f"[AUTO-BET FILTERED] Match '{match.home_team} vs {match.away_team}' is on "
+                f"{match.kickoff.date()} (not today {now.date()}). Preserving bankroll for today's action."
+            )
+            return False
+
+        # Cannot bet on matches that have already kicked off
+        if match.kickoff <= now:
+            logger.debug(
+                f"[AUTO-BET FILTERED] Match '{match.home_team} vs {match.away_team}' already kicked off at {match.kickoff}."
+            )
+            return False
+
         # Strict odds range validation
         if prediction.best_odds < settings.MIN_ODDS or prediction.best_odds > settings.MAX_ODDS:
             logger.debug(
