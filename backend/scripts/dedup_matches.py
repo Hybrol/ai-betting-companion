@@ -39,22 +39,22 @@ def run_dedup():
             merged_groups += 1
             def sort_key(m_item):
                 pb_count = db.query(PaperBet).filter(PaperBet.match_id == m_item.id).count()
+                has_exact_key = 1 if m_item.match_key == c_key else 0
                 odds_count = db.query(BookmakerOdds).filter(BookmakerOdds.match_id == m_item.id).count()
-                return (pb_count, odds_count, m_item.id)
+                return (pb_count, has_exact_key, odds_count, m_item.id)
 
             group.sort(key=sort_key, reverse=True)
             primary = group[0]
             duplicates = group[1:]
 
-            primary.match_key = c_key
-            primary.home_team = normalize_team_name(primary.home_team)
-            primary.away_team = normalize_team_name(primary.away_team)
-            primary.league = normalize_league_name(primary.league)
-
             print(f"[GROUP] Merging {len(duplicates)} duplicates into Primary #{primary.id} ({primary.home_team} vs {primary.away_team} - {primary.league})")
 
             for dup in duplicates:
                 print(f"   -> Merging #{dup.id} ({dup.home_team} vs {dup.away_team} - {dup.league})")
+                # Free unique constraint on match_key immediately
+                dup.match_key = f"dup_{dup.id}_{c_key}"
+                db.flush()
+
                 # Reassign paper bets
                 db.query(PaperBet).filter(PaperBet.match_id == dup.id).update({"match_id": primary.id})
 
@@ -77,7 +77,14 @@ def run_dedup():
                 # Delete duplicate predictions
                 db.query(Prediction).filter(Prediction.match_id == dup.id).delete()
                 db.delete(dup)
+                db.flush()
                 deleted_count += 1
+
+            primary.match_key = c_key
+            primary.home_team = normalize_team_name(primary.home_team)
+            primary.away_team = normalize_team_name(primary.away_team)
+            primary.league = normalize_league_name(primary.league)
+            db.flush()
 
         db.commit()
         print(f"\n[DONE] Successfully merged {merged_groups} duplicate match groups and removed {deleted_count} duplicate match rows.")

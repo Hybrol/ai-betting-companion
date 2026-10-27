@@ -97,20 +97,19 @@ async def lifespan(app: FastAPI):
             # Group has duplicates! Pick best primary match
             def sort_key(m_item):
                 pb_count = db_cleanup.query(PaperBet).filter(PaperBet.match_id == m_item.id).count()
+                has_exact_key = 1 if m_item.match_key == c_key else 0
                 odds_count = db_cleanup.query(BookmakerOdds).filter(BookmakerOdds.match_id == m_item.id).count()
-                return (pb_count, odds_count, m_item.id)
+                return (pb_count, has_exact_key, odds_count, m_item.id)
 
             group.sort(key=sort_key, reverse=True)
             primary = group[0]
             duplicates = group[1:]
 
-            primary.match_key = c_key
-            primary.home_team = normalize_team_name(primary.home_team)
-            primary.away_team = normalize_team_name(primary.away_team)
-            primary.league = normalize_league_name(primary.league)
-
             for dup in duplicates:
                 logger.info(f"[DEDUP] Merging duplicate Match #{dup.id} ({dup.home_team} vs {dup.away_team}) into Match #{primary.id}")
+                dup.match_key = f"dup_{dup.id}_{c_key}"
+                db_cleanup.flush()
+
                 db_cleanup.query(PaperBet).filter(PaperBet.match_id == dup.id).update({"match_id": primary.id})
 
                 dup_odds = db_cleanup.query(BookmakerOdds).filter(BookmakerOdds.match_id == dup.id).all()
@@ -130,6 +129,13 @@ async def lifespan(app: FastAPI):
 
                 db_cleanup.query(Prediction).filter(Prediction.match_id == dup.id).delete()
                 db_cleanup.delete(dup)
+                db_cleanup.flush()
+
+            primary.match_key = c_key
+            primary.home_team = normalize_team_name(primary.home_team)
+            primary.away_team = normalize_team_name(primary.away_team)
+            primary.league = normalize_league_name(primary.league)
+            db_cleanup.flush()
 
         db_cleanup.commit()
         logger.info("[DEDUP] Automatic match deduplication completed.")
