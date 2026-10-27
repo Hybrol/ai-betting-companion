@@ -1,10 +1,17 @@
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, base_dir)
+sys.path.insert(0, os.path.dirname(base_dir))
 
-from backend.app.core.database import SessionLocal
-from backend.app.engine.normalizer import create_match_key, normalize_team_name, normalize_league_name
-from backend.app.models.schema import Match, BookmakerOdds, Prediction, PaperBet
+try:
+    from app.core.database import SessionLocal
+    from app.engine.normalizer import create_match_key, normalize_team_name, normalize_league_name
+    from app.models.schema import Match, BookmakerOdds, Prediction, PaperBet
+except ImportError:
+    from backend.app.core.database import SessionLocal
+    from backend.app.engine.normalizer import create_match_key, normalize_team_name, normalize_league_name
+    from backend.app.models.schema import Match, BookmakerOdds, Prediction, PaperBet
 from collections import defaultdict
 
 def run_dedup():
