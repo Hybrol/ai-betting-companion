@@ -39,9 +39,9 @@ export default function ValueBetsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedBet, setSelectedBet] = useState<ValueBetItem | null>(null);
 
-  const loadBets = async () => {
+  const loadBets = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const leagueParam = selectedLeague === "All Leagues" ? undefined : selectedLeague;
       const [bets, multiple] = await Promise.all([
         fetchValueBets(minEv, leagueParam, todayOnly),
@@ -52,12 +52,16 @@ export default function ValueBetsPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadBets();
+    const interval = setInterval(() => {
+      loadBets(true);
+    }, 20000);
+    return () => clearInterval(interval);
   }, [selectedLeague, minEv, todayOnly]);
 
   return (

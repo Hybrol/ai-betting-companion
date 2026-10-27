@@ -24,28 +24,33 @@ export default function PaperBetsPage() {
     setExpandedBetId((prev) => (prev === id ? null : id));
   };
 
-  const loadBets = async () => {
+  const loadBets = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const statusParam = filter === "ALL" ? undefined : filter;
       const data = await fetchPaperBets(statusParam);
       setBets(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadBets();
+    // Auto-refresh every 15 seconds to stream live scores and instant settlements
+    const interval = setInterval(() => {
+      loadBets(true);
+    }, 15000);
+    return () => clearInterval(interval);
   }, [filter]);
 
   const handleCheckLive = async () => {
     try {
       setCheckingLive(true);
       await checkLiveScores();
-      await loadBets();
+      await loadBets(false);
     } catch (err) {
       console.error(err);
     } finally {
@@ -67,6 +72,10 @@ export default function PaperBetsPage() {
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
             <History className="w-7 h-7 text-emerald-400" />
             <span>Simulated Paper Wagers</span>
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Auto-Sync Ao Vivo (15s)</span>
+            </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Histórico de apostas virtuais e liquidação automática minuto a minuto via ESPN Scoreboard

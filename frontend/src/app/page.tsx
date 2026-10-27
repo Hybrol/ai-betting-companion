@@ -73,9 +73,9 @@ export default function DashboardPage() {
   const [selectedBet, setSelectedBet] = useState<ValueBetItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const loadData = async () => {
+  const loadData = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const [s, v, set, mult] = await Promise.all([
         fetchStats(),
         fetchValueBets(3.5, undefined, true),
@@ -89,12 +89,17 @@ export default function DashboardPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadData();
+    // Auto-refresh dashboard every 20 seconds
+    const interval = setInterval(() => {
+      loadData(true);
+    }, 20000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleReset = async () => {

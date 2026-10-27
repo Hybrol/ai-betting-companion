@@ -310,10 +310,15 @@ class LiveScoreResolver:
                 mkt = leg.get("market", "")
                 sel = leg.get("selection", "")
 
-                # Record live scores in leg
-                leg["home_score"] = h_score
-                leg["away_score"] = a_score
-                leg["match_status"] = match.status.value
+                # Record live scores in leg and mark updated if changed
+                old_h = leg.get("home_score")
+                old_a = leg.get("away_score")
+                old_st = leg.get("match_status")
+                if old_h != h_score or old_a != a_score or old_st != match.status.value:
+                    leg["home_score"] = h_score
+                    leg["away_score"] = a_score
+                    leg["match_status"] = match.status.value
+                    updated = True
 
                 if match.status == MatchStatus.FINISHED:
                     is_win = PaperTrader.evaluate_selection(mkt, sel, h_score, a_score)

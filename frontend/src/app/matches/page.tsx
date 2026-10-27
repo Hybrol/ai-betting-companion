@@ -31,21 +31,26 @@ export default function MatchesPage() {
     recommendedStake?: number;
   } | null>(null);
 
-  const loadMatches = async () => {
+  const loadMatches = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const leagueParam = selectedLeague === "All Leagues" ? undefined : selectedLeague;
       const data = await fetchMatches(leagueParam, todayOnly);
       setMatches(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadMatches();
+    // Auto-refresh match live odds and in-play scores every 20 seconds
+    const interval = setInterval(() => {
+      loadMatches(true);
+    }, 20000);
+    return () => clearInterval(interval);
   }, [selectedLeague, todayOnly]);
 
   return (
