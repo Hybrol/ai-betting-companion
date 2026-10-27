@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus
+from ..engine.normalizer import normalize_team_name, normalize_league_name
 from ..engine.scheduler import execute_betting_cycle
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
@@ -62,9 +63,9 @@ def list_matches(
 
         result.append({
             "id": m.id,
-            "home_team": m.home_team,
-            "away_team": m.away_team,
-            "league": m.league,
+            "home_team": normalize_team_name(m.home_team),
+            "away_team": normalize_team_name(m.away_team),
+            "league": normalize_league_name(m.league),
             "kickoff": m.kickoff.isoformat(),
             "status": m.status.value,
             "home_score": m.home_score,

@@ -222,9 +222,58 @@ def normalize_team_name(name: str) -> str:
 
     return best_match
 
+LEAGUE_CANONICAL: dict[str, str] = {
+    "alemanha - bundesliga": "Bundesliga",
+    "bundesliga": "Bundesliga",
+    "brasileirao serie a": "Brasileirão",
+    "brasileirão série a": "Brasileirão",
+    "brasileirao": "Brasileirão",
+    "brasileirão": "Brasileirão",
+    "brasil - serie a": "Brasileirão",
+    "conference league": "Conference League",
+    "uefa conference league": "Conference League",
+    "liga conferencia": "Conference League",
+    "liga conferência": "Conference League",
+    "espanha - la liga": "La Liga",
+    "la liga": "La Liga",
+    "laliga": "La Liga",
+    "primera division": "La Liga",
+    "franca - ligue 1": "Ligue 1",
+    "frança - ligue 1": "Ligue 1",
+    "ligue 1": "Ligue 1",
+    "inglaterra - premier league": "Premier League",
+    "premier league": "Premier League",
+    "italia - serie a": "Serie A",
+    "itália - serie a": "Serie A",
+    "itália - série a": "Serie A",
+    "italia - serie a tim": "Serie A",
+    "serie a": "Serie A",
+    "liga portugal": "Liga Portugal",
+    "liga portugal betclic": "Liga Portugal",
+    "portugal - primeira liga": "Liga Portugal",
+    "primeira liga": "Liga Portugal",
+    "liga dos campeoes": "Champions League",
+    "liga dos campeões": "Champions League",
+    "champions league": "Champions League",
+    "uefa champions league": "Champions League",
+    "liga europa": "Europa League",
+    "europa league": "Europa League",
+    "uefa europa league": "Europa League",
+    "saudi pro league": "Saudi Pro League",
+    "uae pro league": "UAE Pro League",
+    "catar stars league": "Qatar Stars League",
+    "qatar stars league": "Qatar Stars League"
+}
+
+def normalize_league_name(league: str) -> str:
+    if not league:
+        return "Desconhecido"
+    cleaned = clean_string(league)
+    return LEAGUE_CANONICAL.get(cleaned, LEAGUE_CANONICAL.get(league.lower().strip(), league.strip()))
+
 def create_match_key(home_team: str, away_team: str, kickoff_date: str) -> str:
     h = get_canonical_stem(home_team).replace(' ', '_')
     a = get_canonical_stem(away_team).replace(' ', '_')
-    # Keep YYYYMMDD
-    date_part = kickoff_date.split('T')[0].replace('-', '')
+    # Extract YYYYMMDD reliably whether kickoff_date is ISO with 'T' or DB string with space
+    date_part = str(kickoff_date).replace('T', ' ').split(' ')[0].replace('-', '')
     return f"{h}_vs_{a}_{date_part}"

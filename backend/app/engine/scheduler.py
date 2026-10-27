@@ -8,7 +8,7 @@ from sqlalchemy import func
 from ..core.config import settings
 from ..core.database import SessionLocal
 from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus, PaperBet, BetStatus
-from ..engine.normalizer import create_match_key, get_canonical_stem
+from ..engine.normalizer import create_match_key, get_canonical_stem, normalize_team_name, normalize_league_name
 from ..engine.predictor import MatchPredictor
 from ..engine.value_finder import ValueFinder, ValueOpportunity
 from ..engine.paper_trader import PaperTrader
@@ -80,20 +80,28 @@ async def execute_betting_cycle(target_league: str | None = None):
                     logger.debug(f"[CRON] Scraper {scraper.bookmaker_name} note on {league}: {e}")
 
             for sm in all_scraped:
-                m_key = create_match_key(sm.home_team, sm.away_team, sm.kickoff.isoformat())
+                h_name = normalize_team_name(sm.home_team)
+                a_name = normalize_team_name(sm.away_team)
+                norm_lg = normalize_league_name(sm.league or league)
+                m_key = create_match_key(h_name, a_name, sm.kickoff.isoformat())
                 match = db.query(Match).filter(Match.match_key == m_key).first()
 
                 if not match:
                     match = Match(
                         match_key=m_key,
-                        home_team=sm.home_team,
-                        away_team=sm.away_team,
-                        league=sm.league or league,
+                        home_team=h_name,
+                        away_team=a_name,
+                        league=norm_lg,
                         kickoff=sm.kickoff,
                         status=MatchStatus.SCHEDULED
                     )
                     db.add(match)
                     db.flush()
+                else:
+                    # Keep canonical naming and league up to date
+                    match.home_team = h_name
+                    match.away_team = a_name
+                    match.league = norm_lg
 
                 # Upsert all scraped odds
                 for odd_item in sm.odds:

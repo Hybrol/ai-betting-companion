@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..core.database import get_db
-from ..models.schema import Prediction, Match
+from ..models.schema import Prediction, Match, MatchStatus
+from ..engine.normalizer import get_canonical_stem, normalize_team_name, normalize_league_name
 from ..engine.value_finder import ValueFinder, ValueOpportunity
 from ..engine.paper_trader import PaperTrader
 
@@ -21,7 +22,10 @@ def get_value_bets(
     Returns AI-identified value bets with confidence level and expert tipster rationale.
     By default, restricts recommendations strictly to today's matches.
     """
-    query = db.query(Prediction).join(Match).filter(Prediction.ev_percent >= min_ev)
+    query = db.query(Prediction).join(Match).filter(
+        Prediction.ev_percent >= min_ev,
+        Match.status != MatchStatus.FINISHED
+    )
     if league:
         query = query.filter(Match.league == league)
 
@@ -33,14 +37,22 @@ def get_value_bets(
 
     preds = query.order_by(Prediction.ev_percent.desc()).all()
 
+    seen_match_markets = set()
     results = []
     for p in preds:
+        h_norm = normalize_team_name(p.match.home_team)
+        a_norm = normalize_team_name(p.match.away_team)
+        stem_key = (f"{get_canonical_stem(h_norm)}_vs_{get_canonical_stem(a_norm)}", p.market_type)
+        if stem_key in seen_match_markets:
+            continue
+        seen_match_markets.add(stem_key)
+
         results.append({
             "id": p.id,
             "match_id": p.match_id,
-            "home_team": p.match.home_team,
-            "away_team": p.match.away_team,
-            "league": p.match.league,
+            "home_team": h_norm,
+            "away_team": a_norm,
+            "league": normalize_league_name(p.match.league),
             "kickoff": p.match.kickoff.isoformat(),
             "market_type": p.market_type,
             "selection": p.selection,
@@ -69,7 +81,8 @@ def get_curated_multiple(
     query = db.query(Prediction).join(Match).filter(
         Prediction.ev_percent >= 3.5,
         Prediction.best_odds >= 1.35,
-        Prediction.best_odds <= 2.80
+        Prediction.best_odds <= 2.80,
+        Match.status != MatchStatus.FINISHED
     )
 
     if today_only:
@@ -84,9 +97,9 @@ def get_curated_multiple(
     opps = [
         ValueOpportunity(
             match_id=p.match_id,
-            home_team=p.match.home_team,
-            away_team=p.match.away_team,
-            league=p.match.league,
+            home_team=normalize_team_name(p.match.home_team),
+            away_team=normalize_team_name(p.match.away_team),
+            league=normalize_league_name(p.match.league),
             market_type=p.market_type,
             selection=p.selection,
             best_bookmaker=p.best_bookmaker,

@@ -70,6 +70,74 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Startup future bets cleanup notice: {e}")
     finally:
         db.close()
+
+    # Automatic Match & Prediction Deduplication
+    db_cleanup = SessionLocal()
+    try:
+        from .engine.normalizer import create_match_key, normalize_team_name, normalize_league_name
+        from .models.schema import BookmakerOdds, Prediction
+        from collections import defaultdict
+
+        all_matches = db_cleanup.query(Match).all()
+        by_canon_key = defaultdict(list)
+
+        for m in all_matches:
+            c_key = create_match_key(m.home_team, m.away_team, m.kickoff.isoformat())
+            by_canon_key[c_key].append(m)
+
+        for c_key, group in by_canon_key.items():
+            if len(group) <= 1:
+                m = group[0]
+                m.match_key = c_key
+                m.home_team = normalize_team_name(m.home_team)
+                m.away_team = normalize_team_name(m.away_team)
+                m.league = normalize_league_name(m.league)
+                continue
+
+            # Group has duplicates! Pick best primary match
+            def sort_key(m_item):
+                pb_count = db_cleanup.query(PaperBet).filter(PaperBet.match_id == m_item.id).count()
+                odds_count = db_cleanup.query(BookmakerOdds).filter(BookmakerOdds.match_id == m_item.id).count()
+                return (pb_count, odds_count, m_item.id)
+
+            group.sort(key=sort_key, reverse=True)
+            primary = group[0]
+            duplicates = group[1:]
+
+            primary.match_key = c_key
+            primary.home_team = normalize_team_name(primary.home_team)
+            primary.away_team = normalize_team_name(primary.away_team)
+            primary.league = normalize_league_name(primary.league)
+
+            for dup in duplicates:
+                logger.info(f"[DEDUP] Merging duplicate Match #{dup.id} ({dup.home_team} vs {dup.away_team}) into Match #{primary.id}")
+                db_cleanup.query(PaperBet).filter(PaperBet.match_id == dup.id).update({"match_id": primary.id})
+
+                dup_odds = db_cleanup.query(BookmakerOdds).filter(BookmakerOdds.match_id == dup.id).all()
+                for d_odd in dup_odds:
+                    exists = db_cleanup.query(BookmakerOdds).filter(
+                        BookmakerOdds.match_id == primary.id,
+                        BookmakerOdds.bookmaker == d_odd.bookmaker,
+                        BookmakerOdds.market_type == d_odd.market_type,
+                        BookmakerOdds.selection == d_odd.selection
+                    ).first()
+                    if exists:
+                        if d_odd.odds > exists.odds:
+                            exists.odds = d_odd.odds
+                        db_cleanup.delete(d_odd)
+                    else:
+                        d_odd.match_id = primary.id
+
+                db_cleanup.query(Prediction).filter(Prediction.match_id == dup.id).delete()
+                db_cleanup.delete(dup)
+
+        db_cleanup.commit()
+        logger.info("[DEDUP] Automatic match deduplication completed.")
+    except Exception as e:
+        db_cleanup.rollback()
+        logger.error(f"[DEDUP] Error during match deduplication: {e}")
+    finally:
+        db_cleanup.close()
         
     # Start the 30-minute recurring scheduler
     logger.info(f"Starting 30-minute betting inspection scheduler (interval: {settings.CRON_INTERVAL_MINUTES}m)...")
