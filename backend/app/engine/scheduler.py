@@ -230,7 +230,8 @@ async def execute_betting_cycle(target_league: str | None = None):
                 kelly_stake_percent=p.kelly_stake_percent,
                 recommended_stake=p.recommended_stake,
                 confidence=getattr(p, "confidence", "MÉDIA") or "MÉDIA",
-                reasoning=getattr(p, "reasoning", "") or ""
+                reasoning=getattr(p, "reasoning", "") or "",
+                kickoff=p.match.kickoff.isoformat()
             )
             for p in today_preds
         ]

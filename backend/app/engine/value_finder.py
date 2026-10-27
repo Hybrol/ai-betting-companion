@@ -20,6 +20,7 @@ class ValueOpportunity(BaseModel):
     recommended_stake: float
     confidence: str
     reasoning: str
+    kickoff: str | None = None
 
 class ValueFinder:
     @staticmethod
@@ -232,7 +233,8 @@ class ValueFinder:
                     "bookmaker": leg.best_bookmaker,
                     "odds": leg.best_odds,
                     "confidence": leg.confidence,
-                    "reasoning": leg.reasoning
+                    "reasoning": leg.reasoning,
+                    "kickoff": leg.kickoff
                 }
                 for leg in selected_legs
             ]

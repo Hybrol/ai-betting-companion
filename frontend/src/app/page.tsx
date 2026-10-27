@@ -12,7 +12,10 @@ import {
   ArrowRight,
   Zap,
   Bell,
-  Clock
+  Clock,
+  Calendar,
+  ShieldAlert,
+  Layers
 } from "lucide-react";
 import Link from "next/link";
 import StatCard from "@/components/StatCard";
@@ -20,7 +23,46 @@ import BankrollChart from "@/components/BankrollChart";
 import BetModal from "@/components/BetModal";
 import SettingsModal from "@/components/SettingsModal";
 import { fetchStats, fetchValueBets, fetchSettings, fetchCuratedMultiple, resetBankroll, DashboardStats, ValueBetItem, SystemSettings, CuratedMultiple } from "@/lib/api";
-import { ShieldAlert, Layers } from "lucide-react";
+
+function formatMatchDate(isoString?: string) {
+  if (!isoString) return "";
+  try {
+    const d = new Date(isoString);
+    const now = new Date();
+
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow =
+      d.getDate() === tomorrow.getDate() &&
+      d.getMonth() === tomorrow.getMonth() &&
+      d.getFullYear() === tomorrow.getFullYear();
+
+    const timeStr = d.toLocaleTimeString("pt-PT", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    if (isToday) {
+      return `Hoje às ${timeStr}`;
+    }
+    if (isTomorrow) {
+      return `Amanhã às ${timeStr}`;
+    }
+
+    const dateStr = d.toLocaleDateString("pt-PT", {
+      day: "numeric",
+      month: "short",
+    });
+    return `${dateStr} às ${timeStr}`;
+  } catch {
+    return isoString;
+  }
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -195,9 +237,20 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             {curatedMultiple.legs.map((leg, idx) => (
-              <div key={idx} className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-xs">
-                <div className="font-bold text-white truncate">{leg.match}</div>
-                <div className="text-[11px] text-slate-400">{leg.market}: <strong className="text-emerald-400">{leg.selection} @ {leg.odds.toFixed(2)}</strong> ({leg.bookmaker})</div>
+              <div key={idx} className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 text-xs space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="font-bold text-white truncate">{leg.match}</div>
+                  {leg.kickoff && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 whitespace-nowrap">
+                      <Clock className="w-2.5 h-2.5" />
+                      <span>{formatMatchDate(leg.kickoff)}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>{leg.market}: <strong className="text-emerald-400">{leg.selection} @ {leg.odds.toFixed(2)}</strong> ({leg.bookmaker})</span>
+                  <span className="text-[10px] text-slate-500">{leg.league}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -254,7 +307,14 @@ export default function DashboardPage() {
                       <div className="font-bold text-white text-sm">
                         {v.home_team} vs {v.away_team}
                       </div>
-                      <div className="text-[11px] text-slate-400 font-medium">{v.league}</div>
+                      <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
+                        <span>{v.league}</span>
+                        <span>&bull;</span>
+                        <span className="flex items-center gap-1 text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 w-fit">
+                          <Calendar className="w-3 h-3 text-emerald-400" />
+                          <span>{formatMatchDate(v.kickoff)}</span>
+                        </span>
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 font-bold text-white">
                       <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">

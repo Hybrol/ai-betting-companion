@@ -89,6 +89,7 @@ export interface CuratedMultiple {
     odds: number;
     confidence: string;
     reasoning: string;
+    kickoff?: string;
   }>;
 }
 
