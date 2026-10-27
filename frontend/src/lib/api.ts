@@ -92,6 +92,48 @@ export interface CuratedMultiple {
   }>;
 }
 
+export interface TeamStatDetails {
+  name: string;
+  rank: string;
+  points: string;
+  record: string;
+  goal_diff: string;
+  form: string;
+  last_matches: Array<{
+    opponent: string;
+    result: string;
+    score: string;
+  }>;
+}
+
+export interface MultipleLegItem {
+  match: string;
+  league: string;
+  market: string;
+  selection: string;
+  bookmaker: string;
+  odds: number;
+  confidence: string;
+  reasoning?: string;
+  dossier_text?: string;
+  status?: string;
+  home_score?: number | null;
+  away_score?: number | null;
+  match_status?: string;
+  stats_analysis?: {
+    home: TeamStatDetails;
+    away: TeamStatDetails;
+    dixon_coles: {
+      xg_home: number;
+      xg_away: number;
+      xg_total: number;
+      ev_percent: number;
+      market_odds: number;
+    };
+    dossier_text?: string;
+  };
+}
+
 export interface PaperBetItem {
   id: number;
   match_id: number;
@@ -108,6 +150,8 @@ export interface PaperBetItem {
   profit_loss: number;
   confidence?: string;
   reasoning?: string;
+  is_multiple?: boolean;
+  multiple_legs?: MultipleLegItem[] | null;
   home_score?: number | null;
   away_score?: number | null;
   match_status?: string;

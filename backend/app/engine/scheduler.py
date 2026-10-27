@@ -240,43 +240,72 @@ async def execute_betting_cycle(target_league: str | None = None):
             max_legs=3,
             current_bankroll=current_bankroll
         )
-        if curated_multiple and settings.DISCORD_WEBHOOK_URL:
+
+        if curated_multiple:
+            # 1. Enrich every leg with comprehensive pre-match statistical analysis
+            from .team_analyzer import TeamStatsAnalyzer
+            curated_multiple = await TeamStatsAnalyzer.enrich_multiple(curated_multiple)
+
             now_utc = datetime.utcnow()
             today_str = now_utc.strftime("%Y-%m-%d")
-            multi_sig = get_multiple_signature(curated_multiple)
 
-            last_sig = LAST_MULTIPLE_NOTIFICATION.get("signature")
-            last_date = LAST_MULTIPLE_NOTIFICATION.get("date")
-            last_time = LAST_MULTIPLE_NOTIFICATION.get("timestamp")
+            # 2. Place curated multiple in Paper Trading (Strictly 1 multiple per day)
+            if settings.AUTO_BET_ENABLED:
+                existing_today_multiple = db.query(PaperBet).filter(
+                    PaperBet.is_multiple == True,
+                    func.date(PaperBet.placed_at) == today_str
+                ).first()
 
-            is_same_signature = (multi_sig == last_sig)
-            is_same_day = (last_date == today_str)
+                if not existing_today_multiple:
+                    try:
+                        placed_mb = PaperTrader.place_multiple_bet(
+                            db=db,
+                            curated_multiple=curated_multiple
+                        )
+                        logger.info(
+                            f"[AUTO-BET MULTIPLE PLACED] {placed_mb.stake:.2f}€ on curated multiple #{placed_mb.id} "
+                            f"({curated_multiple['legs_count']} legs @ {placed_mb.odds:.2f}, potential payout: {placed_mb.potential_payout:.2f}€)"
+                        )
+                        total_auto_bets += 1
+                    except Exception as e:
+                        logger.error(f"[AUTO-BET MULTIPLE ERROR] Could not place multiple: {e}")
 
-            should_notify_multiple = False
-            if not is_same_day:
-                should_notify_multiple = True
-            elif not is_same_signature:
-                # Selections changed today: allow re-dispatch only if at least 2 hours elapsed to prevent flapping
-                if last_time is None or (now_utc - last_time).total_seconds() >= 7200:
+            # 3. Discord Webhook Notification with deduplication
+            if settings.DISCORD_WEBHOOK_URL:
+                multi_sig = get_multiple_signature(curated_multiple)
+
+                last_sig = LAST_MULTIPLE_NOTIFICATION.get("signature")
+                last_date = LAST_MULTIPLE_NOTIFICATION.get("date")
+                last_time = LAST_MULTIPLE_NOTIFICATION.get("timestamp")
+
+                is_same_signature = (multi_sig == last_sig)
+                is_same_day = (last_date == today_str)
+
+                should_notify_multiple = False
+                if not is_same_day:
                     should_notify_multiple = True
+                elif not is_same_signature:
+                    # Selections changed today: allow re-dispatch only if at least 2 hours elapsed
+                    if last_time is None or (now_utc - last_time).total_seconds() >= 7200:
+                        should_notify_multiple = True
+                    else:
+                        logger.info(
+                            f"[DISCORD SKIPPED] Curated multiple changed but cooldown active "
+                            f"({int((now_utc - last_time).total_seconds())}s / 7200s)."
+                        )
                 else:
                     logger.info(
-                        f"[DISCORD SKIPPED] Curated multiple changed but cooldown active "
-                        f"({int((now_utc - last_time).total_seconds())}s / 7200s)."
+                        f"[DISCORD SKIPPED] Curated multiple already dispatched for today ({today_str}) "
+                        f"with identical selections: {multi_sig}."
                     )
-            else:
-                logger.info(
-                    f"[DISCORD SKIPPED] Curated multiple already dispatched for today ({today_str}) "
-                    f"with identical selections: {multi_sig}."
-                )
 
-            if should_notify_multiple:
-                sent = await DiscordNotifier.notify_curated_multiple(curated_multiple)
-                if sent:
-                    LAST_MULTIPLE_NOTIFICATION["signature"] = multi_sig
-                    LAST_MULTIPLE_NOTIFICATION["date"] = today_str
-                    LAST_MULTIPLE_NOTIFICATION["timestamp"] = now_utc
-                    logger.info(f"[DISCORD] Curated multiple successfully dispatched: {multi_sig}")
+                if should_notify_multiple:
+                    sent = await DiscordNotifier.notify_curated_multiple(curated_multiple)
+                    if sent:
+                        LAST_MULTIPLE_NOTIFICATION["signature"] = multi_sig
+                        LAST_MULTIPLE_NOTIFICATION["date"] = today_str
+                        LAST_MULTIPLE_NOTIFICATION["timestamp"] = now_utc
+                        logger.info(f"[DISCORD] Curated multiple successfully dispatched: {multi_sig}")
 
         logger.info(
             f"=== [CRON] Elite Cycle Completed! Found {total_new_opportunities} quality +EV opportunities, "

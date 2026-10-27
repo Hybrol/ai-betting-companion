@@ -119,21 +119,29 @@ class DiscordNotifier:
         for i, leg in enumerate(legs, 1):
             mkt = MARKET_LABELS_PT.get(leg["market"], leg["market"])
             sel = SELECTION_LABELS_PT.get(leg["selection"], leg["selection"])
-            conf_icon = "🟢" if leg["confidence"] == "ALTA" else "🔵"
+            conf_icon = "🟢" if leg.get("confidence") == "ALTA" else "🔵"
+            
+            dossier = leg.get("dossier_text", "")
+            if dossier:
+                analysis_part = f"\n   {dossier}"
+            else:
+                analysis_part = f"\n   • *{leg.get('reasoning', '')}*"
+
             legs_text.append(
-                f"**{i}. {leg['match']}**\n"
+                f"**{i}. {leg['match']}** ({leg.get('league', '')})\n"
                 f"   • Mercado: `{mkt}` — `{sel}`\n"
-                f"   • Odd: **`{leg['odds']:.2f}`** na **{leg['bookmaker']}** {conf_icon} *Confiança {leg['confidence']}*\n"
-                f"   • *{leg['reasoning']}*"
+                f"   • Odd: **`{leg['odds']:.2f}`** na **{leg['bookmaker']}** {conf_icon} *Confiança {leg.get('confidence', 'ALTA')}*"
+                f"{analysis_part}"
             )
 
         description = (
-            f"Combinação de valor selecionada com base no modelo Dixon-Coles e consenso de mercado SRIJ:\n\n"
+            f"Combinação de valor selecionada com base em análise estatística aprofundada, Dixon-Coles e consenso SRIJ:\n\n"
             + "\n\n".join(legs_text) + "\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"📈 **Odd Total Combinada:** **`{multiple_data['total_odds']:.2f}`** (Odd Justa: `{multiple_data['fair_odds']:.2f}`)\n"
             f"🎯 **Probabilidade Estimada:** `{multiple_data['combined_prob_percent']}%` | Edge: **`+{multiple_data['combined_ev_percent']}%`**\n"
             f"💵 **Stake Controlada:** **`{multiple_data['recommended_stake']:.2f} €`** ➜ Potencial Retorno: **`{multiple_data['potential_payout']:.2f} €`**\n"
+            f"📝 **Paper Wager:** Aposta combinada registada automaticamente no sistema.\n"
         )
 
         embed = {
@@ -146,6 +154,50 @@ class DiscordNotifier:
             "timestamp": datetime.utcnow().isoformat()
         }
 
+        return await cls.send_webhook_message(embeds=[embed])
+
+    @classmethod
+    async def notify_multiple_result(
+        cls,
+        bet_id: int,
+        legs: list[dict],
+        odds: float,
+        stake: float,
+        profit_loss: float,
+        is_green: bool,
+        current_balance: float
+    ) -> bool:
+        if not settings.DISCORD_WEBHOOK_URL:
+            return False
+
+        title = f"{'🎉 MÚLTIPLA DE VALOR GREEN!' if is_green else '❌ Múltipla de Valor Resolvida (RED)'}"
+        color = 0x22c55e if is_green else 0xef4444
+
+        legs_summary = []
+        for idx, l in enumerate(legs, 1):
+            leg_icon = "✅" if l.get("status") == "GREEN" else ("❌" if l.get("status") == "RED" else "⏳")
+            legs_summary.append(f"{leg_icon} **{l.get('match')}**: `{l.get('market')}` - `{l.get('selection')}` @ {l.get('odds')}")
+
+        pnl_text = f"+{profit_loss:.2f} €" if is_green else f"{profit_loss:.2f} €"
+
+        desc = (
+            f"**Resultado Final da Múltipla #{bet_id} ({len(legs)} Seleções):**\n\n"
+            + "\n".join(legs_summary) + "\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 **Odd Total:** `{odds:.2f}` | Stake: `{stake:.2f} €`\n"
+            f"💰 **Retorno:** **`{pnl_text}`**\n"
+            f"🏦 **Banca Atualizada:** `{current_balance:.2f} €`"
+        )
+
+        embed = {
+            "title": title,
+            "description": desc,
+            "color": color,
+            "footer": {
+                "text": f"{settings.RESPONSIBLE_GAMBLING_MSG} • AI Betting Companion"
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
         return await cls.send_webhook_message(embeds=[embed])
 
     @classmethod

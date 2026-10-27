@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -79,6 +80,123 @@ class PaperTrader:
             balance=round(br.current_balance, 2),
             pnl_delta=-round(stake, 2),
             description=f"Placed bet: {stake:.2f}€ on {selection} @ {odds:.2f} ({bookmaker})"
+        )
+        db.add(hist)
+
+        db.commit()
+        db.refresh(bet)
+        return bet
+
+    @staticmethod
+    def evaluate_selection(market_type: str, selection: str, home_score: int, away_score: int) -> bool:
+        total_goals = home_score + away_score
+        mkt = market_type.upper()
+        sel = selection.upper().strip()
+
+        if mkt == "1X2":
+            if home_score > away_score:
+                win_1x2 = "1"
+            elif away_score > home_score:
+                win_1x2 = "2"
+            else:
+                win_1x2 = "X"
+            return sel == win_1x2
+
+        elif mkt == "DOUBLE_CHANCE":
+            if sel in ("1X", "1/X"):
+                return home_score >= away_score
+            elif sel in ("X2", "X/2"):
+                return away_score >= home_score
+            elif sel in ("12", "1/2"):
+                return home_score != away_score
+
+        elif "OVER_UNDER" in mkt:
+            line = 1.5 if "1_5" in mkt else (3.5 if "3_5" in mkt else 2.5)
+            if "OVER" in sel:
+                return total_goals > line
+            else:
+                return total_goals < line
+
+        elif mkt == "BTTS":
+            if sel in ("YES", "SIM", "1"):
+                return home_score > 0 and away_score > 0
+            else:
+                return home_score == 0 or away_score == 0
+
+        return False
+
+    @staticmethod
+    def evaluate_early_in_play(market_type: str, selection: str, home_score: int, away_score: int) -> bool | None:
+        """Returns True if definitively GREEN, False if definitively RED, None if still open."""
+        total_goals = home_score + away_score
+        mkt = market_type.upper()
+        sel = selection.upper().strip()
+
+        if mkt == "BTTS":
+            if home_score > 0 and away_score > 0:
+                return True if sel in ("YES", "SIM", "1") else False
+
+        elif "OVER_UNDER" in mkt:
+            line = 1.5 if "1_5" in mkt else (3.5 if "3_5" in mkt else 2.5)
+            if total_goals > line:
+                return True if "OVER" in sel else False
+
+        return None
+
+    @classmethod
+    def place_multiple_bet(
+        cls,
+        db: Session,
+        curated_multiple: dict,
+    ) -> PaperBet:
+        br = cls.get_or_create_bankroll(db)
+        stake = float(curated_multiple.get("recommended_stake", 10.0))
+        odds = float(curated_multiple.get("total_odds", 2.0))
+        potential_payout = float(curated_multiple.get("potential_payout", round(stake * odds, 2)))
+        legs = curated_multiple.get("legs", [])
+
+        if stake > br.current_balance:
+            raise ValueError(f"Insufficient funds for multiple! Balance: {br.current_balance:.2f}€, Stake: {stake:.2f}€")
+
+        br.current_balance -= stake
+        br.total_staked += stake
+        br.total_bets += 1
+
+        first_match_id = legs[0].get("match_id", 1) if legs else 1
+
+        dossier_lines = [f"💎 MÚLTIPLA DE VALOR ({len(legs)} SELEÇÕES) — ODD {odds:.2f} (+{curated_multiple.get('combined_ev_percent', 0)}% EV):"]
+        for idx, leg in enumerate(legs, 1):
+            dossier_lines.append(f"[{idx}] {leg.get('match')}: {leg.get('market')} - {leg.get('selection')} @ {leg.get('odds')} ({leg.get('bookmaker')})")
+            if leg.get("dossier_text"):
+                dossier_lines.append(leg["dossier_text"])
+
+        full_reasoning = "\n\n".join(dossier_lines)
+
+        for l in legs:
+            if "status" not in l:
+                l["status"] = "PENDING"
+
+        bet = PaperBet(
+            match_id=first_match_id,
+            bookmaker="Múltipla SRIJ",
+            market_type=f"MÚLTIPLA ({len(legs)} Seleções)",
+            selection="Combinada",
+            odds=odds,
+            stake=stake,
+            potential_payout=potential_payout,
+            status=BetStatus.PENDING,
+            confidence="ALTA",
+            reasoning=full_reasoning,
+            is_multiple=True,
+            multiple_legs=json.dumps(legs, ensure_ascii=False),
+            placed_at=datetime.utcnow()
+        )
+        db.add(bet)
+
+        hist = BankrollHistory(
+            balance=round(br.current_balance, 2),
+            pnl_delta=-round(stake, 2),
+            description=f"Placed multiple: {stake:.2f}€ on {len(legs)} legs @ {odds:.2f}"
         )
         db.add(hist)
 

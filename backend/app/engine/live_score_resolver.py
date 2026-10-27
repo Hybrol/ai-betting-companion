@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import json
 from datetime import datetime, timedelta
 import httpx
 from sqlalchemy.orm import Session
@@ -246,9 +247,161 @@ class LiveScoreResolver:
                                         current_balance=br.current_balance
                                     )
                         break
+
+            # Settle any pending Accumulators / Multiples
+            multiples_settled = await cls.check_and_resolve_multiples(db)
+            total_settled += multiples_settled
+
         except Exception as e:
             logger.error(f"[LIVE RESOLVER ERROR] {e}", exc_info=True)
         finally:
             db.close()
 
         return total_settled
+
+    @classmethod
+    async def check_and_resolve_multiples(cls, db: Session) -> int:
+        """
+        Settles pending accumulator/multiple bets based on live and finished match scores.
+        - If any leg fails -> Multiple is settled as RED immediately.
+        - If all legs succeed -> Multiple is settled as GREEN with full payout.
+        - If in progress, updates live leg states.
+        """
+        pending_multiples = db.query(PaperBet).filter(
+            PaperBet.is_multiple == True,
+            PaperBet.status == BetStatus.PENDING
+        ).all()
+
+        if not pending_multiples:
+            return 0
+
+        settled_count = 0
+        br = PaperTrader.get_or_create_bankroll(db)
+
+        for mb in pending_multiples:
+            try:
+                legs = json.loads(mb.multiple_legs or "[]")
+            except Exception:
+                continue
+
+            all_legs_green = True
+            any_leg_red = False
+            updated = False
+
+            for leg in legs:
+                m_id = leg.get("match_id")
+                match = None
+                if m_id:
+                    match = db.query(Match).filter(Match.id == m_id).first()
+                if not match:
+                    m_str = leg.get("match", "")
+                    parts = m_str.split(" vs ")
+                    if len(parts) == 2:
+                        for m_cand in db.query(Match).all():
+                            if cls._match_teams(parts[0], m_cand.home_team) and cls._match_teams(parts[1], m_cand.away_team):
+                                match = m_cand
+                                break
+
+                if not match or match.home_score is None or match.away_score is None:
+                    all_legs_green = False
+                    continue
+
+                h_score, a_score = match.home_score, match.away_score
+                mkt = leg.get("market", "")
+                sel = leg.get("selection", "")
+
+                # Record live scores in leg
+                leg["home_score"] = h_score
+                leg["away_score"] = a_score
+                leg["match_status"] = match.status.value
+
+                if match.status == MatchStatus.FINISHED:
+                    is_win = PaperTrader.evaluate_selection(mkt, sel, h_score, a_score)
+                    if is_win:
+                        if leg.get("status") != "GREEN":
+                            leg["status"] = "GREEN"
+                            updated = True
+                    else:
+                        leg["status"] = "RED"
+                        any_leg_red = True
+                        updated = True
+                elif match.status == MatchStatus.LIVE:
+                    early = PaperTrader.evaluate_early_in_play(mkt, sel, h_score, a_score)
+                    if early is True:
+                        if leg.get("status") != "GREEN":
+                            leg["status"] = "GREEN"
+                            updated = True
+                    elif early is False:
+                        leg["status"] = "RED"
+                        any_leg_red = True
+                        updated = True
+                    else:
+                        all_legs_green = False
+                else:
+                    all_legs_green = False
+
+                if leg.get("status") != "GREEN":
+                    all_legs_green = False
+
+            if any_leg_red:
+                mb.status = BetStatus.RED
+                mb.payout = 0.0
+                mb.profit_loss = -mb.stake
+                mb.resolved_at = datetime.utcnow()
+                mb.multiple_legs = json.dumps(legs, ensure_ascii=False)
+                br.reds += 1
+                br.total_pnl -= mb.stake
+
+                hist = BankrollHistory(
+                    balance=round(br.current_balance, 2),
+                    pnl_delta=-mb.stake,
+                    description=f"RED. Múltipla #{mb.id} perdida (-{mb.stake:.2f}€)"
+                )
+                db.add(hist)
+                db.commit()
+                settled_count += 1
+                logger.info(f"[LIVE RESOLVER] Settled Multiple #{mb.id} as RED (-{mb.stake:.2f}€)")
+                await DiscordNotifier.notify_multiple_result(
+                    bet_id=mb.id,
+                    legs=legs,
+                    odds=mb.odds,
+                    stake=mb.stake,
+                    profit_loss=mb.profit_loss,
+                    is_green=False,
+                    current_balance=br.current_balance
+                )
+
+            elif all_legs_green:
+                mb.status = BetStatus.GREEN
+                mb.payout = mb.potential_payout
+                mb.profit_loss = round(mb.payout - mb.stake, 2)
+                mb.resolved_at = datetime.utcnow()
+                mb.multiple_legs = json.dumps(legs, ensure_ascii=False)
+                br.current_balance += mb.payout
+                br.greens += 1
+                br.total_pnl += mb.profit_loss
+
+                hist = BankrollHistory(
+                    balance=round(br.current_balance, 2),
+                    pnl_delta=mb.profit_loss,
+                    description=f"GREEN! Múltipla #{mb.id} VENCEU! (+{mb.profit_loss:.2f}€ @ odd {mb.odds:.2f})"
+                )
+                db.add(hist)
+                db.commit()
+                settled_count += 1
+                logger.info(f"[LIVE RESOLVER] Settled Multiple #{mb.id} as GREEN (+{mb.profit_loss:.2f}€)")
+                await DiscordNotifier.notify_multiple_result(
+                    bet_id=mb.id,
+                    legs=legs,
+                    odds=mb.odds,
+                    stake=mb.stake,
+                    profit_loss=mb.profit_loss,
+                    is_green=True,
+                    current_balance=br.current_balance
+                )
+
+            elif updated:
+                mb.multiple_legs = json.dumps(legs, ensure_ascii=False)
+                db.commit()
+
+        return settled_count

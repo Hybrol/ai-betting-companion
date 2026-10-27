@@ -86,8 +86,8 @@ class PaperBet(Base):
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False, index=True)
     
     bookmaker = Column(String(32), nullable=False)
-    market_type = Column(String(32), nullable=False)
-    selection = Column(String(32), nullable=False)
+    market_type = Column(String(64), nullable=False)
+    selection = Column(String(64), nullable=False)
     
     odds = Column(Float, nullable=False)
     stake = Column(Float, nullable=False)
@@ -99,6 +99,10 @@ class PaperBet(Base):
     
     confidence = Column(String(32), default="MÉDIA")
     reasoning = Column(Text, nullable=True)
+
+    # Accumulator / Multiple support
+    is_multiple = Column(Boolean, default=False, nullable=False)
+    multiple_legs = Column(Text, nullable=True) # JSON representation of individual legs & team stats
     
     placed_at = Column(DateTime, default=datetime.utcnow, index=True)
     resolved_at = Column(DateTime, nullable=True)
