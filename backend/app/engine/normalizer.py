@@ -96,17 +96,110 @@ CANONICAL_TEAMS = {
     "vasco": "Vasco da Gama",
     "cruzeiro": "Cruzeiro",
     "internacional": "Internacional",
+
+    # Serie A (Italy)
+    "como": "Como 1907",
+    "como 1907": "Como 1907",
+    "torino": "Torino FC",
+    "torino fc": "Torino FC",
+    "as roma": "AS Roma",
+    "roma": "AS Roma",
+    "cagliari": "Cagliari Calcio",
+    "cagliari calcio": "Cagliari Calcio",
+    "juventus": "Juventus",
+    "inter": "Inter Milan",
+    "inter milan": "Inter Milan",
+    "internazionale": "Inter Milan",
+    "milan": "AC Milan",
+    "ac milan": "AC Milan",
+    "napoli": "SSC Napoli",
+    "ssc napoli": "SSC Napoli",
+    "lazio": "SS Lazio",
+    "ss lazio": "SS Lazio",
+    "atalanta": "Atalanta BC",
+    "fiorentina": "ACF Fiorentina",
+    "bologna": "Bologna FC",
+    "bologna fc": "Bologna FC",
+    "monza": "AC Monza",
+    "parma": "Parma Calcio",
+    "hellas verona": "Hellas Verona",
+    "verona": "Hellas Verona",
+    "empoli": "Empoli FC",
+    "venezia": "Venezia FC",
+    "udinese": "Udinese Calcio",
+    "lecce": "US Lecce",
+    "genoa": "Genoa CFC",
+
+    # Bundesliga (Germany)
+    "bayern munich": "Bayern Munich",
+    "bayern": "Bayern Munich",
+    "bayern munchen": "Bayern Munich",
+    "borussia dortmund": "Borussia Dortmund",
+    "dortmund": "Borussia Dortmund",
+    "bayer leverkusen": "Bayer Leverkusen",
+    "leverkusen": "Bayer Leverkusen",
+    "rb leipzig": "RB Leipzig",
+    "leipzig": "RB Leipzig",
+    "eintracht frankfurt": "Eintracht Frankfurt",
+    "frankfurt": "Eintracht Frankfurt",
+    "vfb stuttgart": "VfB Stuttgart",
+    "stuttgart": "VfB Stuttgart",
+    "wolfsburg": "VfL Wolfsburg",
+    "hoffenheim": "TSG Hoffenheim",
+    "werder bremen": "Werder Bremen",
+    "bremen": "Werder Bremen",
+
+    # Ligue 1 (France)
+    "paris saint-germain": "PSG",
+    "psg": "PSG",
+    "marseille": "Marseille",
+    "olympique marseille": "Marseille",
+    "lyon": "Lyon",
+    "olympique lyonnais": "Lyon",
+    "monaco": "AS Monaco",
+    "as monaco": "AS Monaco",
+    "lille": "Lille",
+    "losc lille": "Lille",
+    "nice": "OGC Nice",
+    "lens": "RC Lens",
+
+    # Saudi Pro League
+    "al hilal": "Al-Hilal",
+    "al-hilal": "Al-Hilal",
+    "al nassr": "Al-Nassr",
+    "al-nassr": "Al-Nassr",
+    "al ittihad": "Al-Ittihad",
+    "al-ittihad": "Al-Ittihad",
+    "al ahli": "Al-Ahli",
+    "al-ahli": "Al-Ahli",
+    "al ettifaq": "Al-Ettifaq",
+    "al-ettifaq": "Al-Ettifaq",
+    "al shabab": "Al-Shabab",
+    "al-shabab": "Al-Shabab",
 }
 
 def clean_string(s: str) -> str:
     s = s.lower().strip()
     # Normalize unicode accents
     s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
-    # Remove common prefixes/suffixes
-    s = re.sub(r'\b(fc|cf|cd|sc|ac|sad|gd|sl|rcd|ca|rj|rs|pr|mg|sp)\b', '', s)
+    # Remove common prefixes/suffixes & club types
+    s = re.sub(r'\b(fc|cf|cd|sc|ac|sad|gd|sl|rcd|ca|rj|rs|pr|mg|sp|vfl|vfb|tsg|ogc|rc|afc|bsc|ssc|calcio|us|ss|as)\b', '', s)
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
+
+def get_canonical_stem(name: str) -> str:
+    """
+    Returns a unified canonical stem for deduplication and matching.
+    Strips founding years (e.g. 1907, 1899, 1904), club prefixes, extra whitespace,
+    and resolves canonical mappings.
+    """
+    canonical = normalize_team_name(name)
+    cleaned = clean_string(canonical)
+    # Strip founding years / 2-4 digit suffixes (e.g. 1907, 1899, 1904, 04, 96)
+    stem = re.sub(r'\b(18\d{2}|19\d{2}|20\d{2}|\d{2,4})\b', '', cleaned).strip()
+    stem = re.sub(r'\s+', ' ', stem).strip()
+    return stem if stem else cleaned
 
 def normalize_team_name(name: str) -> str:
     cleaned = clean_string(name)
@@ -130,8 +223,8 @@ def normalize_team_name(name: str) -> str:
     return best_match
 
 def create_match_key(home_team: str, away_team: str, kickoff_date: str) -> str:
-    h = clean_string(normalize_team_name(home_team)).replace(' ', '_')
-    a = clean_string(normalize_team_name(away_team)).replace(' ', '_')
+    h = get_canonical_stem(home_team).replace(' ', '_')
+    a = get_canonical_stem(away_team).replace(' ', '_')
     # Keep YYYYMMDD
     date_part = kickoff_date.split('T')[0].replace('-', '')
     return f"{h}_vs_{a}_{date_part}"

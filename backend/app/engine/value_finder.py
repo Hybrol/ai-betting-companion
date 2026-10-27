@@ -1,6 +1,8 @@
+from difflib import SequenceMatcher
 from pydantic import BaseModel
 from ..core.config import settings
 from .predictor import MatchPredictor
+from .normalizer import get_canonical_stem
 
 class ValueOpportunity(BaseModel):
     match_id: int
@@ -156,13 +158,44 @@ class ValueFinder:
 
         selected_legs: list[ValueOpportunity] = []
         seen_matches = set()
+        seen_team_stems: set[str] = set()
 
         for opp in sorted_opps:
-            if opp.match_id not in seen_matches and 1.35 <= opp.best_odds <= 2.80:
-                selected_legs.append(opp)
-                seen_matches.add(opp.match_id)
-                if len(selected_legs) >= max_legs:
+            if opp.best_odds < 1.35 or opp.best_odds > 2.80:
+                continue
+
+            if opp.match_id in seen_matches:
+                continue
+
+            h_stem = get_canonical_stem(opp.home_team)
+            a_stem = get_canonical_stem(opp.away_team)
+
+            # Prevent duplicate matches or teams across different bookmakers/match records
+            is_duplicate = False
+            for seen in seen_team_stems:
+                if h_stem == seen or a_stem == seen:
+                    is_duplicate = True
                     break
+                if (len(h_stem) >= 4 and h_stem in seen) or (len(seen) >= 4 and seen in h_stem):
+                    is_duplicate = True
+                    break
+                if (len(a_stem) >= 4 and a_stem in seen) or (len(seen) >= 4 and seen in a_stem):
+                    is_duplicate = True
+                    break
+                if SequenceMatcher(None, h_stem, seen).ratio() >= 0.80 or SequenceMatcher(None, a_stem, seen).ratio() >= 0.80:
+                    is_duplicate = True
+                    break
+
+            if is_duplicate:
+                continue
+
+            selected_legs.append(opp)
+            seen_matches.add(opp.match_id)
+            seen_team_stems.add(h_stem)
+            seen_team_stems.add(a_stem)
+
+            if len(selected_legs) >= max_legs:
+                break
 
         if len(selected_legs) < 2:
             return None

@@ -5,6 +5,7 @@ from sqlalchemy import func
 from ..models.schema import Match, PaperBet, Prediction, BetStatus, BookmakerOdds
 from ..engine.paper_trader import PaperTrader
 from ..engine.discord_notifier import DiscordNotifier
+from ..engine.normalizer import get_canonical_stem
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -61,10 +62,25 @@ class AutoBettor:
             return False
 
         # Strict match-level check: Has this match already been wagered on with ANY bookmaker?
-        existing_match_bet = db.query(PaperBet).filter(
-            PaperBet.match_id == match.id,
+        # Check by match_id AND by canonical team stems to prevent multi-casino duplicate betting
+        current_h_stem = get_canonical_stem(match.home_team)
+        current_a_stem = get_canonical_stem(match.away_team)
+
+        all_pending_bets = db.query(PaperBet).join(Match).filter(
             PaperBet.status == BetStatus.PENDING
-        ).first()
+        ).all()
+
+        existing_match_bet = None
+        for bet in all_pending_bets:
+            if bet.match_id == match.id:
+                existing_match_bet = bet
+                break
+            bet_h_stem = get_canonical_stem(bet.match.home_team)
+            bet_a_stem = get_canonical_stem(bet.match.away_team)
+            if (current_h_stem == bet_h_stem and current_a_stem == bet_a_stem) or \
+               (current_h_stem == bet_a_stem and current_a_stem == bet_h_stem):
+                existing_match_bet = bet
+                break
 
         auto_bet_placed = False
 
@@ -119,8 +135,9 @@ class AutoBettor:
                 except Exception as e:
                     logger.error(f"[AUTO-BET ERROR] Could not place bet: {e}")
 
-        # 2. Discord Notification (Deduplicated per match with 4-hour window)
-        last_notified = NOTIFIED_CACHE.get(match.id)
+        # 2. Discord Notification (Deduplicated per canonical match with 4-hour window)
+        match_dedup_key = f"{current_h_stem}_vs_{current_a_stem}_{match.kickoff.strftime('%Y%m%d')}"
+        last_notified = NOTIFIED_CACHE.get(match_dedup_key) or NOTIFIED_CACHE.get(match.id)
         should_notify = (last_notified is None) or (now - last_notified > timedelta(hours=4))
 
         if should_notify and settings.DISCORD_WEBHOOK_URL:
@@ -143,6 +160,7 @@ class AutoBettor:
                     auto_bet_placed=auto_bet_placed or (existing_match_bet is not None)
                 )
                 if sent:
+                    NOTIFIED_CACHE[match_dedup_key] = now
                     NOTIFIED_CACHE[match.id] = now
             except Exception as e:
                 logger.error(f"[DISCORD ERROR] Failed to send value bet alert: {e}")

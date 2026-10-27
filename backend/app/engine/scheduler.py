@@ -8,7 +8,7 @@ from sqlalchemy import func
 from ..core.config import settings
 from ..core.database import SessionLocal
 from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus
-from ..engine.normalizer import create_match_key
+from ..engine.normalizer import create_match_key, get_canonical_stem
 from ..engine.predictor import MatchPredictor
 from ..engine.value_finder import ValueFinder, ValueOpportunity
 from ..engine.paper_trader import PaperTrader
@@ -21,6 +21,29 @@ from ..scrapers.solverde import SolverdeScraper
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
+
+# Multiple notification cache: tracks signature and timestamp of last dispatched multiple
+LAST_MULTIPLE_NOTIFICATION: dict = {
+    "signature": None,
+    "date": None,
+    "timestamp": None
+}
+
+def get_multiple_signature(multiple: dict) -> str:
+    legs = multiple.get("legs", [])
+    stubs = []
+    for leg in legs:
+        match_str = leg.get("match", "")
+        parts = match_str.split(" vs ")
+        if len(parts) == 2:
+            m_key = f"{get_canonical_stem(parts[0])}_vs_{get_canonical_stem(parts[1])}"
+        else:
+            m_key = get_canonical_stem(match_str)
+        market = leg.get("market", "")
+        selection = leg.get("selection", "")
+        stubs.append(f"{m_key}:{market}:{selection}")
+    stubs.sort()
+    return "__".join(stubs)
 
 async def execute_betting_cycle(target_league: str | None = None):
     """
@@ -218,7 +241,42 @@ async def execute_betting_cycle(target_league: str | None = None):
             current_bankroll=current_bankroll
         )
         if curated_multiple and settings.DISCORD_WEBHOOK_URL:
-            await DiscordNotifier.notify_curated_multiple(curated_multiple)
+            now_utc = datetime.utcnow()
+            today_str = now_utc.strftime("%Y-%m-%d")
+            multi_sig = get_multiple_signature(curated_multiple)
+
+            last_sig = LAST_MULTIPLE_NOTIFICATION.get("signature")
+            last_date = LAST_MULTIPLE_NOTIFICATION.get("date")
+            last_time = LAST_MULTIPLE_NOTIFICATION.get("timestamp")
+
+            is_same_signature = (multi_sig == last_sig)
+            is_same_day = (last_date == today_str)
+
+            should_notify_multiple = False
+            if not is_same_day:
+                should_notify_multiple = True
+            elif not is_same_signature:
+                # Selections changed today: allow re-dispatch only if at least 2 hours elapsed to prevent flapping
+                if last_time is None or (now_utc - last_time).total_seconds() >= 7200:
+                    should_notify_multiple = True
+                else:
+                    logger.info(
+                        f"[DISCORD SKIPPED] Curated multiple changed but cooldown active "
+                        f"({int((now_utc - last_time).total_seconds())}s / 7200s)."
+                    )
+            else:
+                logger.info(
+                    f"[DISCORD SKIPPED] Curated multiple already dispatched for today ({today_str}) "
+                    f"with identical selections: {multi_sig}."
+                )
+
+            if should_notify_multiple:
+                sent = await DiscordNotifier.notify_curated_multiple(curated_multiple)
+                if sent:
+                    LAST_MULTIPLE_NOTIFICATION["signature"] = multi_sig
+                    LAST_MULTIPLE_NOTIFICATION["date"] = today_str
+                    LAST_MULTIPLE_NOTIFICATION["timestamp"] = now_utc
+                    logger.info(f"[DISCORD] Curated multiple successfully dispatched: {multi_sig}")
 
         logger.info(
             f"=== [CRON] Elite Cycle Completed! Found {total_new_opportunities} quality +EV opportunities, "
