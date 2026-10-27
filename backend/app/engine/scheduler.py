@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..core.config import settings
 from ..core.database import SessionLocal
-from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus
+from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus, PaperBet, BetStatus
 from ..engine.normalizer import create_match_key, get_canonical_stem
 from ..engine.predictor import MatchPredictor
 from ..engine.value_finder import ValueFinder, ValueOpportunity
