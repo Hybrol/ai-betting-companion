@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -92,18 +92,23 @@ class LiveScoreResolver:
         total_settled = 0
         try:
             now_utc = datetime.utcnow()
-            today_str = now_utc.strftime("%Y-%m-%d")
+            cutoff_past = now_utc - timedelta(hours=36)
+            cutoff_future = now_utc + timedelta(hours=24)
 
-            # Matches with PENDING paper bets OR matches today that are SCHEDULED/IN_PLAY
+            # Matches with PENDING paper bets OR currently LIVE matches (even across midnight!)
+            # OR scheduled matches within the last 36h / next 24h
             pending_subquery = db.query(PaperBet.match_id).filter(
                 PaperBet.status == BetStatus.PENDING
             ).distinct().all()
             pending_ids = [m[0] for m in pending_subquery]
 
             active_matches = db.query(Match).filter(
-                (Match.id.in_(pending_ids)) | (
-                    (func.date(Match.kickoff) == today_str) & 
-                    (Match.status.in_([MatchStatus.SCHEDULED, MatchStatus.LIVE]))
+                (Match.id.in_(pending_ids)) |
+                (Match.status == MatchStatus.LIVE) |
+                (
+                    (Match.kickoff >= cutoff_past) &
+                    (Match.kickoff <= cutoff_future) &
+                    (Match.status == MatchStatus.SCHEDULED)
                 )
             ).all()
 
