@@ -6,7 +6,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..core.database import SessionLocal
-from ..models.schema import Match, PaperBet, BetStatus, MatchStatus
+from ..models.schema import Match, PaperBet, BetStatus, MatchStatus, BankrollHistory
 from ..engine.paper_trader import PaperTrader
 from ..engine.discord_notifier import DiscordNotifier
 from ..engine.normalizer import clean_string
