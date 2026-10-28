@@ -47,7 +47,8 @@ class PaperTrader:
         stake: float,
         prediction_id: int | None = None,
         confidence: str = "MÉDIA",
-        reasoning: str | None = None
+        reasoning: str | None = None,
+        stats_analysis: dict | None = None
     ) -> PaperBet:
         br = cls.get_or_create_bankroll(db)
 
@@ -71,6 +72,7 @@ class PaperTrader:
             status=BetStatus.PENDING,
             confidence=confidence,
             reasoning=reasoning,
+            stats_analysis=json.dumps(stats_analysis, ensure_ascii=False) if stats_analysis else None,
             placed_at=datetime.utcnow()
         )
         db.add(bet)

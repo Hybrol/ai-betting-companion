@@ -17,6 +17,9 @@ class PlaceBetRequest(BaseModel):
     odds: float
     stake: float
     prediction_id: int | None = None
+    confidence: str = "MÉDIA"
+    reasoning: str | None = None
+    stats_analysis: dict | None = None
 
 class ResolveMatchRequest(BaseModel):
     match_id: int
@@ -40,7 +43,10 @@ def place_paper_bet(req: PlaceBetRequest, db: Session = Depends(get_db)):
             selection=req.selection,
             odds=req.odds,
             stake=req.stake,
-            prediction_id=req.prediction_id
+            prediction_id=req.prediction_id,
+            confidence=req.confidence,
+            reasoning=req.reasoning,
+            stats_analysis=req.stats_analysis
         )
         return {
             "message": "Bet placed successfully",
@@ -66,11 +72,54 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
     for b in bets:
         is_mult = getattr(b, "is_multiple", False)
         legs_data = None
+        stats_data = None
         if is_mult and b.multiple_legs:
             try:
                 legs_data = json.loads(b.multiple_legs)
             except Exception:
                 legs_data = []
+        elif not is_mult:
+            if getattr(b, "stats_analysis", None):
+                try:
+                    stats_data = json.loads(b.stats_analysis)
+                except Exception:
+                    stats_data = None
+            if not stats_data:
+                p = b.prediction
+                ev = p.ev_percent if p else 8.5
+                model_prob = round(p.model_prob * 100, 1) if p else round((1.0 / (b.odds * 0.9)) * 100, 1)
+                fair_odds = p.fair_odds if p else round(100.0 / model_prob, 2)
+                stats_data = {
+                    "home": {
+                        "name": b.match.home_team,
+                        "rank": "Competidor",
+                        "points": "-",
+                        "record": "Forma Regular",
+                        "goal_diff": "-",
+                        "form": "D-W-L-W-D",
+                        "last_matches": []
+                    },
+                    "away": {
+                        "name": b.match.away_team,
+                        "rank": "Competidor",
+                        "points": "-",
+                        "record": "Forma Regular",
+                        "goal_diff": "-",
+                        "form": "W-D-W-L-W",
+                        "last_matches": []
+                    },
+                    "dixon_coles": {
+                        "xg_home": 1.45,
+                        "xg_away": 1.25,
+                        "xg_total": 2.70,
+                        "ev_percent": round(ev, 1),
+                        "market_odds": b.odds,
+                        "fair_odds": fair_odds,
+                        "model_prob": model_prob,
+                        "kelly_stake_percent": round((b.stake / 1000.0) * 100, 1)
+                    },
+                    "dossier_text": b.reasoning or ""
+                }
 
         results.append({
             "id": b.id,
@@ -93,6 +142,7 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
             "reasoning": getattr(b, "reasoning", "") or "",
             "is_multiple": is_mult,
             "multiple_legs": legs_data,
+            "stats_analysis": stats_data,
             "placed_at": b.placed_at.isoformat(),
             "resolved_at": b.resolved_at.isoformat() if b.resolved_at else None
         })

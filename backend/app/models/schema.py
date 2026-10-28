@@ -103,6 +103,7 @@ class PaperBet(Base):
     # Accumulator / Multiple support
     is_multiple = Column(Boolean, default=False, nullable=False)
     multiple_legs = Column(Text, nullable=True) # JSON representation of individual legs & team stats
+    stats_analysis = Column(Text, nullable=True) # JSON representation of match team stats & algorithmic decision
     
     placed_at = Column(DateTime, default=datetime.utcnow, index=True)
     resolved_at = Column(DateTime, nullable=True)

@@ -39,6 +39,8 @@ async def lifespan(app: FastAPI):
                 conn.exec_driver_sql("ALTER TABLE paper_bets ADD COLUMN is_multiple BOOLEAN DEFAULT 0")
             if "multiple_legs" not in cols_b:
                 conn.exec_driver_sql("ALTER TABLE paper_bets ADD COLUMN multiple_legs TEXT")
+            if "stats_analysis" not in cols_b:
+                conn.exec_driver_sql("ALTER TABLE paper_bets ADD COLUMN stats_analysis TEXT")
     except Exception as e:
         logger.debug(f"Auto-migration note: {e}")
 

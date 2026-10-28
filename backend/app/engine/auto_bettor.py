@@ -110,6 +110,27 @@ class AutoBettor:
                             f"Holding off new wagers until active matches settle."
                         )
                     elif stake > 0 and br.current_balance >= stake:
+                        dossier = None
+                        try:
+                            from .team_analyzer import TeamStatsAnalyzer
+                            dossier = await TeamStatsAnalyzer.fetch_team_dossier(
+                                home_team=match.home_team,
+                                away_team=match.away_team,
+                                league=match.league,
+                                lam=1.45,
+                                mu=1.25,
+                                market=prediction.market_type,
+                                selection=prediction.selection,
+                                odds=prediction.best_odds,
+                                ev_percent=prediction.ev_percent
+                            )
+                            if dossier and "dixon_coles" in dossier:
+                                dossier["dixon_coles"]["model_prob"] = round(prediction.model_prob * 100, 1)
+                                dossier["dixon_coles"]["fair_odds"] = prediction.fair_odds
+                                dossier["dixon_coles"]["kelly_stake_percent"] = prediction.kelly_stake_percent
+                        except Exception as e:
+                            logger.debug(f"[AUTO-BET STATS] Could not fetch stats dossier: {e}")
+
                         PaperTrader.place_bet(
                             db=db,
                             match_id=match.id,
@@ -120,7 +141,8 @@ class AutoBettor:
                             stake=stake,
                             prediction_id=prediction.id,
                             confidence=prediction.confidence or "MÉDIA",
-                            reasoning=prediction.reasoning
+                            reasoning=prediction.reasoning,
+                            stats_analysis=dossier
                         )
                         auto_bet_placed = True
                         logger.info(

@@ -153,6 +153,21 @@ export interface PaperBetItem {
   reasoning?: string;
   is_multiple?: boolean;
   multiple_legs?: MultipleLegItem[] | null;
+  stats_analysis?: {
+    home: TeamStatDetails;
+    away: TeamStatDetails;
+    dixon_coles: {
+      xg_home: number;
+      xg_away: number;
+      xg_total: number;
+      ev_percent?: number;
+      market_odds?: number;
+      model_prob?: number;
+      fair_odds?: number;
+      kelly_stake_percent?: number;
+    };
+    dossier_text?: string;
+  } | null;
   home_score?: number | null;
   away_score?: number | null;
   match_status?: string;

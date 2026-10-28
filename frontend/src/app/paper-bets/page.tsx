@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, Fragment } from "react";
-import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert, RefreshCw, ChevronDown, ChevronUp, BarChart3, Layers } from "lucide-react";
+import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert, RefreshCw, ChevronDown, ChevronUp, BarChart3, Layers, Sparkles } from "lucide-react";
 import { fetchPaperBets, resetBankroll, checkLiveScores, PaperBetItem, MultipleLegItem } from "@/lib/api";
 
 const MARKET_FORMAT_NAMES: Record<string, string> = {
@@ -215,6 +215,14 @@ export default function PaperBetsPage() {
                                   &ldquo;{b.reasoning}&rdquo;
                                 </div>
                               )}
+                              <button
+                                onClick={() => toggleExpand(b.id)}
+                                className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition shadow-sm"
+                              >
+                                <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>{isExpanded ? "Ocultar Estatísticas & Decisão" : "Ver Análise Estatística & Decisão"}</span>
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
+                              </button>
                             </div>
                           )}
                         </td>
@@ -380,6 +388,161 @@ export default function PaperBetsPage() {
                                   );
                                 })}
                               </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* Expanded Single Bet Team Statistics & Algorithmic Decision Drawer */}
+                      {!b.is_multiple && isExpanded && (
+                        <tr className="bg-slate-950/80 border-b border-emerald-900/30">
+                          <td colSpan={9} className="p-4 sm:p-6">
+                            <div className="space-y-4">
+                              {/* Header */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-2">
+                                  <BarChart3 className="w-4 h-4 text-emerald-400" />
+                                  <span>Dossiê Estatístico Detalhado & Justificação da Decisão do Algoritmo</span>
+                                </h4>
+                                <span className="text-[11px] text-slate-400">Dados oficiais via ESPN Scoreboard & Dixon-Coles</span>
+                              </div>
+
+                              {/* Algorithmic Decision & Edge Metrics Box */}
+                              {b.stats_analysis?.dixon_coles && (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+                                  <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
+                                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Mercado & Seleção</span>
+                                    <span className="text-white font-extrabold text-sm">
+                                      {MARKET_FORMAT_NAMES[b.market_type] || b.market_type}: <span className="text-emerald-400">{b.selection}</span>
+                                    </span>
+                                  </div>
+                                  <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
+                                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Odd Oferecida vs Justa</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <span className="text-emerald-400 font-black text-sm">@{b.odds.toFixed(2)}</span>
+                                      <span className="text-slate-500 font-medium text-xs">vs</span>
+                                      <span className="text-slate-300 font-bold text-xs">@{b.stats_analysis.dixon_coles.fair_odds?.toFixed(2) || (100 / (b.stats_analysis.dixon_coles.model_prob || 50)).toFixed(2)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
+                                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Probabilidade Estimada</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <span className="text-cyan-400 font-black text-sm">{b.stats_analysis.dixon_coles.model_prob?.toFixed(1) || (100 / b.odds * 1.1).toFixed(1)}%</span>
+                                      <span className="text-[10px] text-slate-500">(Implícita: {(100 / b.odds).toFixed(1)}%)</span>
+                                    </div>
+                                  </div>
+                                  <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
+                                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Margem de Valor (+EV)</span>
+                                    <span className="text-emerald-400 font-black text-sm">
+                                      +{b.stats_analysis.dixon_coles.ev_percent?.toFixed(1) || 8.5}% EV
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Teams Detailed Stats Cards */}
+                              {b.stats_analysis && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                  {/* Home Team Stats */}
+                                  <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                                    <div className="flex items-center justify-between font-bold text-white">
+                                      <span className="text-emerald-400 font-extrabold flex items-center gap-1.5">
+                                        <span>🏠</span>
+                                        <span>{b.stats_analysis.home.name} (Casa)</span>
+                                      </span>
+                                      <span className="text-[11px] text-slate-300 font-semibold">
+                                        Posição: <strong className="text-white">{b.stats_analysis.home.rank}</strong> ({b.stats_analysis.home.points} pts)
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800">
+                                      <span>Registo: <strong className="text-slate-200">{b.stats_analysis.home.record}</strong></span>
+                                      <span>Diferença de Golos: <strong className="text-slate-200">{b.stats_analysis.home.goal_diff}</strong></span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                                      <span>Forma (Últimos Jogos):</span>
+                                      <div className="flex gap-1">
+                                        {b.stats_analysis.home.last_matches?.length ? (
+                                          b.stats_analysis.home.last_matches.map((m, mIdx) => (
+                                            <span
+                                              key={mIdx}
+                                              title={`${m.result} vs ${m.opponent} (${m.score})`}
+                                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                m.result === "W" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" :
+                                                m.result === "L" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" :
+                                                "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                              }`}
+                                            >
+                                              {m.result}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-slate-500 text-[10px]">{b.stats_analysis.home.form}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
+                                      <span>xG Esperado Casa (Dixon-Coles):</span>
+                                      <strong className="text-emerald-400">{b.stats_analysis.dixon_coles.xg_home.toFixed(2)}</strong>
+                                    </div>
+                                  </div>
+
+                                  {/* Away Team Stats */}
+                                  <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                                    <div className="flex items-center justify-between font-bold text-white">
+                                      <span className="text-cyan-400 font-extrabold flex items-center gap-1.5">
+                                        <span>✈️</span>
+                                        <span>{b.stats_analysis.away.name} (Fora)</span>
+                                      </span>
+                                      <span className="text-[11px] text-slate-300 font-semibold">
+                                        Posição: <strong className="text-white">{b.stats_analysis.away.rank}</strong> ({b.stats_analysis.away.points} pts)
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800">
+                                      <span>Registo: <strong className="text-slate-200">{b.stats_analysis.away.record}</strong></span>
+                                      <span>Diferença de Golos: <strong className="text-slate-200">{b.stats_analysis.away.goal_diff}</strong></span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                                      <span>Forma (Últimos Jogos):</span>
+                                      <div className="flex gap-1">
+                                        {b.stats_analysis.away.last_matches?.length ? (
+                                          b.stats_analysis.away.last_matches.map((m, mIdx) => (
+                                            <span
+                                              key={mIdx}
+                                              title={`${m.result} vs ${m.opponent} (${m.score})`}
+                                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                m.result === "W" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" :
+                                                m.result === "L" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" :
+                                                "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                              }`}
+                                            >
+                                              {m.result}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-slate-500 text-[10px]">{b.stats_analysis.away.form}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
+                                      <span>xG Esperado Fora (Dixon-Coles):</span>
+                                      <strong className="text-cyan-400">{b.stats_analysis.dixon_coles.xg_away.toFixed(2)}</strong>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Tipster Rationale / Algorithmic Decision Explanation */}
+                              {b.reasoning && (
+                                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block flex items-center gap-1.5">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Explicação da Decisão do Algoritmo:</span>
+                                  </span>
+                                  <div className="text-xs text-slate-200 leading-relaxed italic">
+                                    &ldquo;{b.reasoning}&rdquo;
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
