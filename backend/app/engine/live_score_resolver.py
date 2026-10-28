@@ -9,7 +9,7 @@ from ..core.database import SessionLocal
 from ..models.schema import Match, PaperBet, BetStatus, MatchStatus, BankrollHistory
 from ..engine.paper_trader import PaperTrader
 from ..engine.discord_notifier import DiscordNotifier
-from ..engine.normalizer import clean_string
+from ..engine.normalizer import clean_string, get_canonical_stem, normalize_team_name
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,12 @@ ESPN_LEAGUE_MAP = {
 class LiveScoreResolver:
     @staticmethod
     def _match_teams(name1: str, name2: str) -> bool:
+        s1 = get_canonical_stem(name1)
+        s2 = get_canonical_stem(name2)
+        if s1 == s2:
+            return True
+        if s1 and s2 and (s1 in s2 or s2 in s1):
+            return True
         c1, c2 = clean_string(name1), clean_string(name2)
         if c1 == c2:
             return True

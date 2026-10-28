@@ -37,15 +37,15 @@ def get_value_bets(
 
     preds = query.order_by(Prediction.ev_percent.desc()).all()
 
-    seen_match_markets = set()
+    seen_matches = set()
     results = []
     for p in preds:
         h_norm = normalize_team_name(p.match.home_team)
         a_norm = normalize_team_name(p.match.away_team)
-        stem_key = (f"{get_canonical_stem(h_norm)}_vs_{get_canonical_stem(a_norm)}", p.market_type)
-        if stem_key in seen_match_markets:
+        stem_key = f"{get_canonical_stem(h_norm)}_vs_{get_canonical_stem(a_norm)}"
+        if stem_key in seen_matches:
             continue
-        seen_match_markets.add(stem_key)
+        seen_matches.add(stem_key)
 
         results.append({
             "id": p.id,
