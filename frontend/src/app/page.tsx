@@ -76,16 +76,12 @@ export default function DashboardPage() {
   const loadData = async (isBackground = false) => {
     try {
       if (!isBackground) setLoading(true);
-      const [s, v, set, mult] = await Promise.all([
-        fetchStats(),
-        fetchValueBets(3.5, undefined, true),
-        fetchSettings(),
-        fetchCuratedMultiple(true)
-      ]);
-      setStats(s);
-      setTopValues(v.slice(0, 6));
-      setSysSettings(set);
-      setCuratedMultiple(mult);
+      const pStats = fetchStats().then(s => setStats(s)).catch(console.error);
+      const pValues = fetchValueBets(3.5, undefined, true).then(v => setTopValues(v.slice(0, 6))).catch(console.error);
+      const pSettings = fetchSettings().then(set => setSysSettings(set)).catch(console.error);
+      const pMultiple = fetchCuratedMultiple(true).then(mult => setCuratedMultiple(mult)).catch(console.error);
+
+      await Promise.allSettled([pStats, pValues, pSettings, pMultiple]);
     } catch (err) {
       console.error(err);
     } finally {

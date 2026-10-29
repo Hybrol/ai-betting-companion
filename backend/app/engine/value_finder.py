@@ -183,7 +183,7 @@ class ValueFinder:
                 if (len(a_stem) >= 4 and a_stem in seen) or (len(seen) >= 4 and seen in a_stem):
                     is_duplicate = True
                     break
-                if SequenceMatcher(None, h_stem, seen).ratio() >= 0.80 or SequenceMatcher(None, a_stem, seen).ratio() >= 0.80:
+                if SequenceMatcher(None, h_stem, seen).quick_ratio() >= 0.80 or SequenceMatcher(None, a_stem, seen).quick_ratio() >= 0.80:
                     is_duplicate = True
                     break
 

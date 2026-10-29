@@ -17,6 +17,7 @@ export default function PaperBetsPage() {
   const [bets, setBets] = useState<PaperBetItem[]>([]);
   const [filter, setFilter] = useState<string>("ALL");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [checkingLive, setCheckingLive] = useState(false);
   const [expandedBetId, setExpandedBetId] = useState<number | null>(null);
 
@@ -26,12 +27,19 @@ export default function PaperBetsPage() {
 
   const loadBets = async (isBackground = false) => {
     try {
-      if (!isBackground) setLoading(true);
+      if (!isBackground) {
+        setLoading(true);
+        setError(null);
+      }
       const statusParam = filter === "ALL" ? undefined : filter;
       const data = await fetchPaperBets(statusParam);
-      setBets(data);
-    } catch (err) {
-      console.error(err);
+      setBets(data || []);
+      setError(null);
+    } catch (err: any) {
+      console.error("Error loading paper bets:", err);
+      if (!isBackground) {
+        setError(err?.message || "Não foi possível carregar as apostas simuladas.");
+      }
     } finally {
       if (!isBackground) setLoading(false);
     }
@@ -39,10 +47,10 @@ export default function PaperBetsPage() {
 
   useEffect(() => {
     loadBets();
-    // Auto-refresh every 15 seconds to stream live scores and instant settlements
+    // Auto-refresh every 20 seconds to stream live scores and settlements
     const interval = setInterval(() => {
       loadBets(true);
-    }, 15000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [filter]);
 
@@ -120,7 +128,23 @@ export default function PaperBetsPage() {
       {/* Bets Table */}
       <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm backdrop-blur">
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-sm">Carregando apostas simuladas...</div>
+          <div className="py-16 text-center text-slate-400 text-sm flex flex-col items-center justify-center gap-3">
+            <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
+            <span>Carregando apostas simuladas...</span>
+          </div>
+        ) : error ? (
+          <div className="py-12 text-center space-y-3">
+            <div className="inline-flex p-3 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <p className="text-sm text-slate-300 font-semibold">{error}</p>
+            <button
+              onClick={() => loadBets(false)}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-md"
+            >
+              Tentar Novamente
+            </button>
+          </div>
         ) : bets.length === 0 ? (
           <div className="py-16 text-center text-slate-500 text-sm">
             Nenhuma aposta neste filtro. As oportunidades automáticas serão colocadas no próximo ciclo de 30 minutos!
@@ -235,14 +259,14 @@ export default function PaperBetsPage() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 font-semibold text-emerald-400">{b.bookmaker}</td>
-                        <td className="py-3.5 px-4 font-extrabold text-white text-sm">{b.odds.toFixed(2)}</td>
-                        <td className="py-3.5 px-4 font-bold text-slate-200">{b.stake.toFixed(2)} €</td>
+                        <td className="py-3.5 px-4 font-extrabold text-white text-sm">{(b.odds ?? 0).toFixed(2)}</td>
+                        <td className="py-3.5 px-4 font-bold text-slate-200">{(b.stake ?? 0).toFixed(2)} €</td>
                         <td className="py-3.5 px-4 text-slate-300 font-medium">
-                          {b.potential_payout.toFixed(2)} €
+                          {(b.potential_payout ?? 0).toFixed(2)} €
                         </td>
                         <td className="py-3.5 px-4 text-right font-extrabold text-sm">
-                          {isGreen && <span className="text-emerald-400">+{b.profit_loss.toFixed(2)} €</span>}
-                          {isRed && <span className="text-rose-400">{b.profit_loss.toFixed(2)} €</span>}
+                          {isGreen && <span className="text-emerald-400">+{(b.profit_loss ?? 0).toFixed(2)} €</span>}
+                          {isRed && <span className="text-rose-400">{(b.profit_loss ?? 0).toFixed(2)} €</span>}
                           {isPending && <span className="text-slate-500">Pendente</span>}
                         </td>
                       </tr>
@@ -292,7 +316,7 @@ export default function PaperBetsPage() {
                                             {MARKET_FORMAT_NAMES[leg.market] || leg.market}: <strong className="text-white">{leg.selection}</strong>
                                           </span>
                                           <span className="px-2 py-0.5 rounded text-[11px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                            @{leg.odds.toFixed(2)} ({leg.bookmaker})
+                                            @{(leg.odds ?? 0).toFixed(2)} ({leg.bookmaker})
                                           </span>
                                           {legGreen && (
                                             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
@@ -313,66 +337,74 @@ export default function PaperBetsPage() {
                                           {/* Home Team Stats */}
                                           <div className="p-3 rounded-lg bg-slate-800/40 border border-slate-750 space-y-1.5">
                                             <div className="flex items-center justify-between font-bold text-white">
-                                              <span className="text-emerald-400">🏠 {stats.home.name} (Casa)</span>
-                                              <span className="text-[11px] text-slate-300">Posição: {stats.home.rank} ({stats.home.points} pts)</span>
+                                              <span className="text-emerald-400">🏠 {stats.home?.name || "Casa"} (Casa)</span>
+                                              <span className="text-[11px] text-slate-300">Posição: {stats.home?.rank || "N/D"} ({stats.home?.points || "N/D"} pts)</span>
                                             </div>
                                             <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                                              <span>Registo: <strong className="text-slate-200">{stats.home.record}</strong></span>
-                                              <span>DG: <strong className="text-slate-200">{stats.home.goal_diff}</strong></span>
+                                              <span>Registo: <strong className="text-slate-200">{stats.home?.record || "Forma Regular"}</strong></span>
+                                              <span>DG: <strong className="text-slate-200">{stats.home?.goal_diff || "N/D"}</strong></span>
                                             </div>
                                             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                                               <span>Forma (Últimos Jogos):</span>
                                               <div className="flex gap-1">
-                                                {stats.home.last_matches.map((m, mIdx) => (
-                                                  <span
-                                                    key={mIdx}
-                                                    title={`${m.result} vs ${m.opponent} (${m.score})`}
-                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                      m.result === "W" ? "bg-emerald-500/20 text-emerald-300" :
-                                                      m.result === "L" ? "bg-rose-500/20 text-rose-300" :
-                                                      "bg-amber-500/20 text-amber-300"
-                                                    }`}
-                                                  >
-                                                    {m.result}
-                                                  </span>
-                                                ))}
+                                                {stats.home?.last_matches?.length ? (
+                                                  stats.home.last_matches.map((m, mIdx) => (
+                                                    <span
+                                                      key={mIdx}
+                                                      title={`${m.result} vs ${m.opponent} (${m.score})`}
+                                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                        m.result === "W" ? "bg-emerald-500/20 text-emerald-300" :
+                                                        m.result === "L" ? "bg-rose-500/20 text-rose-300" :
+                                                        "bg-amber-500/20 text-amber-300"
+                                                      }`}
+                                                    >
+                                                      {m.result}
+                                                    </span>
+                                                  ))
+                                                ) : (
+                                                  <span className="text-slate-500 text-[10px]">{stats.home?.form || "N/D"}</span>
+                                                )}
                                               </div>
                                             </div>
                                             <div className="text-[11px] text-slate-400">
-                                              xG Esperado Casa: <strong className="text-slate-200">{stats.dixon_coles.xg_home.toFixed(2)}</strong>
+                                              xG Esperado Casa: <strong className="text-slate-200">{(stats.dixon_coles?.xg_home ?? 1.45).toFixed(2)}</strong>
                                             </div>
                                           </div>
 
                                           {/* Away Team Stats */}
                                           <div className="p-3 rounded-lg bg-slate-800/40 border border-slate-750 space-y-1.5">
                                             <div className="flex items-center justify-between font-bold text-white">
-                                              <span className="text-cyan-400">✈️ {stats.away.name} (Fora)</span>
-                                              <span className="text-[11px] text-slate-300">Posição: {stats.away.rank} ({stats.away.points} pts)</span>
+                                              <span className="text-cyan-400">✈️ {stats.away?.name || "Fora"} (Fora)</span>
+                                              <span className="text-[11px] text-slate-300">Posição: {stats.away?.rank || "N/D"} ({stats.away?.points || "N/D"} pts)</span>
                                             </div>
                                             <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                                              <span>Registo: <strong className="text-slate-200">{stats.away.record}</strong></span>
-                                              <span>DG: <strong className="text-slate-200">{stats.away.goal_diff}</strong></span>
+                                              <span>Registo: <strong className="text-slate-200">{stats.away?.record || "Forma Regular"}</strong></span>
+                                              <span>DG: <strong className="text-slate-200">{stats.away?.goal_diff || "N/D"}</strong></span>
                                             </div>
                                             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                                               <span>Forma (Últimos Jogos):</span>
                                               <div className="flex gap-1">
-                                                {stats.away.last_matches.map((m, mIdx) => (
-                                                  <span
-                                                    key={mIdx}
-                                                    title={`${m.result} vs ${m.opponent} (${m.score})`}
-                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                      m.result === "W" ? "bg-emerald-500/20 text-emerald-300" :
-                                                      m.result === "L" ? "bg-rose-500/20 text-rose-300" :
-                                                      "bg-amber-500/20 text-amber-300"
-                                                    }`}
-                                                  >
-                                                    {m.result}
-                                                  </span>
-                                                ))}
+                                                {stats.away?.last_matches?.length ? (
+                                                  stats.away.last_matches.map((m, mIdx) => (
+                                                    <span
+                                                      key={mIdx}
+                                                      title={`${m.result} vs ${m.opponent} (${m.score})`}
+                                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                        m.result === "W" ? "bg-emerald-500/20 text-emerald-300" :
+                                                        m.result === "L" ? "bg-rose-500/20 text-rose-300" :
+                                                        "bg-amber-500/20 text-amber-300"
+                                                      }`}
+                                                    >
+                                                      {m.result}
+                                                    </span>
+                                                  ))
+                                                ) : (
+                                                  <span className="text-slate-500 text-[10px]">{stats.away?.form || "N/D"}</span>
+                                                )}
                                               </div>
                                             </div>
                                             <div className="text-[11px] text-slate-400">
-                                              xG Esperado Fora: <strong className="text-slate-200">{stats.dixon_coles.xg_away.toFixed(2)}</strong>
+                                              xG Esperado Fora: <strong className="text-slate-200">{(stats.dixon_coles?.xg_away ?? 1.25).toFixed(2)}</strong>
                                             </div>
                                           </div>
                                         </div>
@@ -419,7 +451,7 @@ export default function PaperBetsPage() {
                                   <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
                                     <span className="text-slate-400 text-[10px] uppercase font-bold block">Odd Oferecida vs Justa</span>
                                     <div className="flex items-center gap-1.5 mt-0.5">
-                                      <span className="text-emerald-400 font-black text-sm">@{b.odds.toFixed(2)}</span>
+                                      <span className="text-emerald-400 font-black text-sm">@{(b.odds ?? 0).toFixed(2)}</span>
                                       <span className="text-slate-500 font-medium text-xs">vs</span>
                                       <span className="text-slate-300 font-bold text-xs">@{b.stats_analysis.dixon_coles.fair_odds?.toFixed(2) || (100 / (b.stats_analysis.dixon_coles.model_prob || 50)).toFixed(2)}</span>
                                     </div>
@@ -427,8 +459,8 @@ export default function PaperBetsPage() {
                                   <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
                                     <span className="text-slate-400 text-[10px] uppercase font-bold block">Probabilidade Estimada</span>
                                     <div className="flex items-center gap-1.5 mt-0.5">
-                                      <span className="text-cyan-400 font-black text-sm">{b.stats_analysis.dixon_coles.model_prob?.toFixed(1) || (100 / b.odds * 1.1).toFixed(1)}%</span>
-                                      <span className="text-[10px] text-slate-500">(Implícita: {(100 / b.odds).toFixed(1)}%)</span>
+                                      <span className="text-cyan-400 font-black text-sm">{b.stats_analysis.dixon_coles.model_prob?.toFixed(1) || (100 / (b.odds || 1) * 1.1).toFixed(1)}%</span>
+                                      <span className="text-[10px] text-slate-500">(Implícita: {(100 / (b.odds || 1)).toFixed(1)}%)</span>
                                     </div>
                                   </div>
                                   <div className="p-2.5 rounded-lg bg-slate-800/50 border border-slate-750">
@@ -482,7 +514,7 @@ export default function PaperBetsPage() {
                                     </div>
                                     <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
                                       <span>xG Esperado Casa (Dixon-Coles):</span>
-                                      <strong className="text-emerald-400">{b.stats_analysis.dixon_coles.xg_home.toFixed(2)}</strong>
+                                      <strong className="text-emerald-400">{(b.stats_analysis.dixon_coles?.xg_home ?? 1.45).toFixed(2)}</strong>
                                     </div>
                                   </div>
 
@@ -491,15 +523,15 @@ export default function PaperBetsPage() {
                                     <div className="flex items-center justify-between font-bold text-white">
                                       <span className="text-cyan-400 font-extrabold flex items-center gap-1.5">
                                         <span>✈️</span>
-                                        <span>{b.stats_analysis.away.name} (Fora)</span>
+                                        <span>{b.stats_analysis.away?.name || "Fora"} (Fora)</span>
                                       </span>
                                       <span className="text-[11px] text-slate-300 font-semibold">
-                                        Posição: <strong className="text-white">{b.stats_analysis.away.rank}</strong> ({b.stats_analysis.away.points} pts)
+                                        Posição: <strong className="text-white">{b.stats_analysis.away?.rank || "N/D"}</strong> ({b.stats_analysis.away?.points || "N/D"} pts)
                                       </span>
                                     </div>
                                     <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800">
-                                      <span>Registo: <strong className="text-slate-200">{b.stats_analysis.away.record}</strong></span>
-                                      <span>Diferença de Golos: <strong className="text-slate-200">{b.stats_analysis.away.goal_diff}</strong></span>
+                                      <span>Registo: <strong className="text-slate-200">{b.stats_analysis.away?.record || "Forma Regular"}</strong></span>
+                                      <span>Diferença de Golos: <strong className="text-slate-200">{b.stats_analysis.away?.goal_diff || "N/D"}</strong></span>
                                     </div>
                                     <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                                       <span>Forma (Últimos Jogos):</span>
@@ -525,7 +557,7 @@ export default function PaperBetsPage() {
                                     </div>
                                     <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
                                       <span>xG Esperado Fora (Dixon-Coles):</span>
-                                      <strong className="text-cyan-400">{b.stats_analysis.dixon_coles.xg_away.toFixed(2)}</strong>
+                                      <strong className="text-cyan-400">{(b.stats_analysis.dixon_coles?.xg_away ?? 1.25).toFixed(2)}</strong>
                                     </div>
                                   </div>
                                 </div>

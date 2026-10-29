@@ -337,20 +337,22 @@ def start_scheduler():
             replace_existing=True
         )
 
-        # 20-second live score tracking and automated paper bet settlement
+        # 60-second live score tracking and automated paper bet settlement (non-overlapping)
         from .live_score_resolver import LiveScoreResolver
-        live_trigger = IntervalTrigger(seconds=20)
+        live_trigger = IntervalTrigger(seconds=60)
         scheduler.add_job(
             LiveScoreResolver.check_and_resolve_live_matches,
             trigger=live_trigger,
             id="live_score_resolver",
-            name="20-sec ESPN Live Score & Auto-Settler",
-            replace_existing=True
+            name="60-sec ESPN Live Score & Auto-Settler",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
 
         scheduler.start()
         logger.info(
-            f"Background scheduler started: 30-minute betting cycle & 20-second ESPN live score auto-settler active."
+            f"Background scheduler started: 30-minute betting cycle & 60-second ESPN live score auto-settler active."
         )
 
 def stop_scheduler():

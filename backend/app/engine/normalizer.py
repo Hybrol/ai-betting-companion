@@ -178,6 +178,9 @@ CANONICAL_TEAMS = {
     "al-shabab": "Al-Shabab",
 }
 
+from functools import lru_cache
+
+@lru_cache(maxsize=4096)
 def clean_string(s: str) -> str:
     s = s.lower().strip()
     # Normalize unicode accents
@@ -188,6 +191,38 @@ def clean_string(s: str) -> str:
     s = re.sub(r'\s+', ' ', s).strip()
     return s
 
+PREPARED_CANONICAL = [(clean_string(k), canon) for k, canon in CANONICAL_TEAMS.items()]
+
+@lru_cache(maxsize=4096)
+def normalize_team_name(name: str) -> str:
+    cleaned = clean_string(name)
+    
+    # Check exact dictionary match
+    raw_lower = name.lower().strip()
+    if raw_lower in CANONICAL_TEAMS:
+        return CANONICAL_TEAMS[raw_lower]
+    if cleaned in CANONICAL_TEAMS:
+        return CANONICAL_TEAMS[cleaned]
+        
+    # Check fast exact/substring in precompiled canonical
+    for c_key, canonical in PREPARED_CANONICAL:
+        if c_key == cleaned or (len(c_key) >= 5 and c_key in cleaned) or (len(cleaned) >= 5 and cleaned in c_key):
+            return canonical
+
+    # Fast fuzzy matching against canonical names (quick_ratio)
+    best_match = name.strip()
+    best_score = 0.0
+    for c_key, canonical in PREPARED_CANONICAL:
+        if abs(len(c_key) - len(cleaned)) > 5:
+            continue
+        sim = SequenceMatcher(None, cleaned, c_key).quick_ratio()
+        if sim > best_score and sim >= 0.75:
+            best_score = sim
+            best_match = canonical
+
+    return best_match
+
+@lru_cache(maxsize=4096)
 def get_canonical_stem(name: str) -> str:
     """
     Returns a unified canonical stem for deduplication and matching.
@@ -200,27 +235,6 @@ def get_canonical_stem(name: str) -> str:
     stem = re.sub(r'\b(18\d{2}|19\d{2}|20\d{2}|\d{2,4})\b', '', cleaned).strip()
     stem = re.sub(r'\s+', ' ', stem).strip()
     return stem if stem else cleaned
-
-def normalize_team_name(name: str) -> str:
-    cleaned = clean_string(name)
-    
-    # Check exact dictionary match
-    raw_lower = name.lower().strip()
-    if raw_lower in CANONICAL_TEAMS:
-        return CANONICAL_TEAMS[raw_lower]
-    if cleaned in CANONICAL_TEAMS:
-        return CANONICAL_TEAMS[cleaned]
-        
-    # Check partial / fuzzy matching against canonical names
-    best_match = name.strip()
-    best_score = 0.0
-    for key, canonical in CANONICAL_TEAMS.items():
-        sim = SequenceMatcher(None, cleaned, clean_string(key)).ratio()
-        if sim > best_score and sim >= 0.75:
-            best_score = sim
-            best_match = canonical
-
-    return best_match
 
 LEAGUE_CANONICAL: dict[str, str] = {
     "alemanha - bundesliga": "Bundesliga",

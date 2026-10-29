@@ -65,15 +65,17 @@ class LiveScoreResolver:
             return True
         if c1 and c2 and (c1 in c2 or c2 in c1):
             return True
-        from difflib import SequenceMatcher
-        return SequenceMatcher(None, c1, c2).ratio() >= 0.60
+        if abs(len(c1) - len(c2)) <= 6:
+            from difflib import SequenceMatcher
+            return SequenceMatcher(None, c1, c2).quick_ratio() >= 0.70
+        return False
 
     @classmethod
     async def fetch_espn_scoreboard(cls, league_slug: str) -> list[dict]:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_slug}/scoreboard"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with httpx.AsyncClient(timeout=4.0) as client:
                 res = await client.get(url, headers=headers)
                 if res.status_code == 200:
                     data = res.json()
@@ -133,8 +135,9 @@ class LiveScoreResolver:
                 if any(x in h_low or x in a_low for x in ["flamengo", "coritiba", "gremio", "atletico", "palmeiras", "sao paulo"]):
                     leagues_to_fetch.add("bra.1")
 
-            # Always ensure primary active leagues are tracked
-            leagues_to_fetch.update(["por.1", "esp.1", "fra.1", "bra.1"])
+            # Fetch only scoreboards for leagues that have active matches
+            if not leagues_to_fetch:
+                return 0
 
             # Fetch scoreboards concurrently
             tasks = [cls.fetch_espn_scoreboard(slug) for slug in leagues_to_fetch]
@@ -145,114 +148,135 @@ class LiveScoreResolver:
                 if isinstance(sb, list):
                     all_espn_events.extend(sb)
 
+            parsed_events = []
+            for ev in all_espn_events:
+                comps = ev.get("competitions", [])
+                if not comps:
+                    continue
+                comp = comps[0]
+                competitors = comp.get("competitors", [])
+                home_comp = next((c for c in competitors if c.get("homeAway") == "home"), None)
+                away_comp = next((c for c in competitors if c.get("homeAway") == "away"), None)
+                if not home_comp or not away_comp:
+                    continue
+                h_name = home_comp.get("team", {}).get("displayName") or home_comp.get("team", {}).get("name", "")
+                a_name = away_comp.get("team", {}).get("displayName") or away_comp.get("team", {}).get("name", "")
+                parsed_events.append({
+                    "h_name": h_name,
+                    "a_name": a_name,
+                    "h_stem": get_canonical_stem(h_name),
+                    "a_stem": get_canonical_stem(a_name),
+                    "comp": comp,
+                    "home_comp": home_comp,
+                    "away_comp": away_comp
+                })
+
             for match in active_matches:
-                for ev in all_espn_events:
-                    comps = ev.get("competitions", [])
-                    if not comps:
+                m_h_stem = get_canonical_stem(match.home_team)
+                m_a_stem = get_canonical_stem(match.away_team)
+
+                for pev in parsed_events:
+                    h_matched = (m_h_stem == pev["h_stem"] or m_h_stem in pev["h_stem"] or pev["h_stem"] in m_h_stem or cls._match_teams(pev["h_name"], match.home_team))
+                    if not h_matched:
                         continue
-                    comp = comps[0]
-                    competitors = comp.get("competitors", [])
-                    home_comp = next((c for c in competitors if c.get("homeAway") == "home"), None)
-                    away_comp = next((c for c in competitors if c.get("homeAway") == "away"), None)
-
-                    if not home_comp or not away_comp:
+                    a_matched = (m_a_stem == pev["a_stem"] or m_a_stem in pev["a_stem"] or pev["a_stem"] in m_a_stem or cls._match_teams(pev["a_name"], match.away_team))
+                    if not a_matched:
                         continue
 
-                    h_name = home_comp.get("team", {}).get("displayName") or home_comp.get("team", {}).get("name", "")
-                    a_name = away_comp.get("team", {}).get("displayName") or away_comp.get("team", {}).get("name", "")
+                    comp = pev["comp"]
+                    home_comp = pev["home_comp"]
+                    away_comp = pev["away_comp"]
+                    h_score_raw = home_comp.get("score")
+                    a_score_raw = away_comp.get("score")
 
-                    if cls._match_teams(h_name, match.home_team) and cls._match_teams(a_name, match.away_team):
-                        h_score_raw = home_comp.get("score")
-                        a_score_raw = away_comp.get("score")
+                    h_score = int(h_score_raw) if h_score_raw is not None and str(h_score_raw).isdigit() else match.home_score
+                    a_score = int(a_score_raw) if a_score_raw is not None and str(a_score_raw).isdigit() else match.away_score
 
-                        h_score = int(h_score_raw) if h_score_raw is not None and str(h_score_raw).isdigit() else match.home_score
-                        a_score = int(a_score_raw) if a_score_raw is not None and str(a_score_raw).isdigit() else match.away_score
+                    status_info = comp.get("status", {})
+                    is_completed = status_info.get("type", {}).get("completed", False)
+                    state = status_info.get("type", {}).get("state", "pre")
+                    clock_desc = status_info.get("displayClock") or status_info.get("type", {}).get("description", "")
 
-                        status_info = comp.get("status", {})
-                        is_completed = status_info.get("type", {}).get("completed", False)
-                        state = status_info.get("type", {}).get("state", "pre")
-                        clock_desc = status_info.get("displayClock") or status_info.get("type", {}).get("description", "")
+                    if h_score is not None and a_score is not None:
+                        match.home_score = h_score
+                        match.away_score = a_score
 
-                        if h_score is not None and a_score is not None:
-                            match.home_score = h_score
-                            match.away_score = a_score
-
-                        if is_completed:
-                            if match.status != MatchStatus.FINISHED:
-                                logger.info(
-                                    f"[LIVE RESOLVER] Match FINISHED: {match.home_team} {h_score} - {a_score} {match.away_team}. Auto-resolving bets!"
-                                )
-                                match.status = MatchStatus.FINISHED
-                                db.commit()
-
-                                # Auto-resolve paper bets!
-                                resolved_bets = PaperTrader.resolve_match_bets(
-                                    db=db,
-                                    match_id=match.id,
-                                    home_score=h_score,
-                                    away_score=a_score
-                                )
-                                total_settled += len(resolved_bets)
-
-                                # Send Discord alerts for each resolved bet
-                                br = PaperTrader.get_or_create_bankroll(db)
-                                for b in resolved_bets:
-                                    is_green = (b.status == BetStatus.GREEN)
-                                    await DiscordNotifier.notify_bet_result(
-                                        home_team=match.home_team,
-                                        away_team=match.away_team,
-                                        league=match.league,
-                                        home_score=h_score,
-                                        away_score=a_score,
-                                        market_type=b.market_type,
-                                        selection=b.selection,
-                                        bookmaker=b.bookmaker,
-                                        odds=b.odds,
-                                        stake=b.stake,
-                                        profit_loss=b.profit_loss,
-                                        is_green=is_green,
-                                        current_balance=br.current_balance
-                                    )
-                        elif state == "in":
-                            if match.status != MatchStatus.LIVE:
-                                match.status = MatchStatus.LIVE
-                                logger.info(
-                                    f"[LIVE RESOLVER] Match LIVE ({clock_desc}): {match.home_team} {h_score} - {a_score} {match.away_team}"
-                                )
+                    if is_completed:
+                        if match.status != MatchStatus.FINISHED:
+                            logger.info(
+                                f"[LIVE RESOLVER] Match FINISHED: {match.home_team} {h_score} - {a_score} {match.away_team}. Auto-resolving bets!"
+                            )
+                            match.status = MatchStatus.FINISHED
                             db.commit()
 
-                            # Check for early mathematically definitive settlements (e.g. BTTS 1-1, Over crossed)
-                            early_resolved = PaperTrader.check_early_in_play_settlement(
+                            # Auto-resolve paper bets!
+                            resolved_bets = PaperTrader.resolve_match_bets(
                                 db=db,
                                 match_id=match.id,
                                 home_score=h_score,
                                 away_score=a_score
                             )
-                            if early_resolved:
-                                total_settled += len(early_resolved)
-                                br = PaperTrader.get_or_create_bankroll(db)
-                                for b in early_resolved:
-                                    is_green = (b.status == BetStatus.GREEN)
-                                    logger.info(
-                                        f"[LIVE RESOLVER] Early settlement for {match.home_team} vs {match.away_team}: "
-                                        f"{b.market_type} {b.selection} -> {'GREEN' if is_green else 'RED'}!"
-                                    )
-                                    await DiscordNotifier.notify_bet_result(
-                                        home_team=match.home_team,
-                                        away_team=match.away_team,
-                                        league=match.league,
-                                        home_score=h_score,
-                                        away_score=a_score,
-                                        market_type=b.market_type,
-                                        selection=b.selection,
-                                        bookmaker=b.bookmaker,
-                                        odds=b.odds,
-                                        stake=b.stake,
-                                        profit_loss=b.profit_loss,
-                                        is_green=is_green,
-                                        current_balance=br.current_balance
-                                    )
-                        break
+                            total_settled += len(resolved_bets)
+
+                            # Send Discord alerts for each resolved bet
+                            br = PaperTrader.get_or_create_bankroll(db)
+                            for b in resolved_bets:
+                                is_green = (b.status == BetStatus.GREEN)
+                                await DiscordNotifier.notify_bet_result(
+                                    home_team=match.home_team,
+                                    away_team=match.away_team,
+                                    league=match.league,
+                                    home_score=h_score,
+                                    away_score=a_score,
+                                    market_type=b.market_type,
+                                    selection=b.selection,
+                                    bookmaker=b.bookmaker,
+                                    odds=b.odds,
+                                    stake=b.stake,
+                                    profit_loss=b.profit_loss,
+                                    is_green=is_green,
+                                    current_balance=br.current_balance
+                                )
+                    elif state == "in":
+                        if match.status != MatchStatus.LIVE:
+                            match.status = MatchStatus.LIVE
+                            logger.info(
+                                f"[LIVE RESOLVER] Match LIVE ({clock_desc}): {match.home_team} {h_score} - {a_score} {match.away_team}"
+                            )
+                        db.commit()
+
+                        # Check for early mathematically definitive settlements (e.g. BTTS 1-1, Over crossed)
+                        early_resolved = PaperTrader.check_early_in_play_settlement(
+                            db=db,
+                            match_id=match.id,
+                            home_score=h_score,
+                            away_score=a_score
+                        )
+                        if early_resolved:
+                            total_settled += len(early_resolved)
+                            br = PaperTrader.get_or_create_bankroll(db)
+                            for b in early_resolved:
+                                is_green = (b.status == BetStatus.GREEN)
+                                logger.info(
+                                    f"[LIVE RESOLVER] Early settlement for {match.home_team} vs {match.away_team}: "
+                                    f"{b.market_type} {b.selection} -> {'GREEN' if is_green else 'RED'}!"
+                                )
+                                await DiscordNotifier.notify_bet_result(
+                                    home_team=match.home_team,
+                                    away_team=match.away_team,
+                                    league=match.league,
+                                    home_score=h_score,
+                                    away_score=a_score,
+                                    market_type=b.market_type,
+                                    selection=b.selection,
+                                    bookmaker=b.bookmaker,
+                                    odds=b.odds,
+                                    stake=b.stake,
+                                    profit_loss=b.profit_loss,
+                                    is_green=is_green,
+                                    current_balance=br.current_balance
+                                )
+                    break
 
             # Settle any pending Accumulators / Multiples
             multiples_settled = await cls.check_and_resolve_multiples(db)
