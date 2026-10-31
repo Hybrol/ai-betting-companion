@@ -5,27 +5,27 @@ from datetime import datetime
 import httpx
 from dateutil import parser
 from .base import BaseBookmakerScraper, ScrapedMatch, ScrapedOddsItem
-from ..engine.normalizer import normalize_team_name
+from ..engine.normalizer import normalize_team_name, normalize_league_name
 
 logger = logging.getLogger(__name__)
 
 BETCLIC_LEAGUES = {
     # Principais Ligas Europeias
-    "Premier League": "https://www.betclic.pt/futebol-s1/premier-league-c4",
-    "La Liga": "https://www.betclic.pt/futebol-s1/la-liga-c7",
-    "Serie A": "https://www.betclic.pt/futebol-s1/serie-a-c6",
-    "Bundesliga": "https://www.betclic.pt/futebol-s1/bundesliga-c5",
-    "Ligue 1": "https://www.betclic.pt/futebol-s1/ligue-1-mcdonalds-c3",
-    "Liga Portugal": "https://www.betclic.pt/futebol-s1/liga-portugal-c32",
-    "Champions League": "https://www.betclic.pt/futebol-s1/liga-dos-campeoes-c8",
-    "Europa League": "https://www.betclic.pt/futebol-s1/liga-europa-c9",
-    "Conference League": "https://www.betclic.pt/futebol-s1/liga-conferencia-c3822",
+    "Premier League": "https://www.betclic.pt/futebol-sfootball/inglaterra-premier-league-c1",
+    "La Liga": "https://www.betclic.pt/futebol-sfootball/espanha-la-liga-c7",
+    "Serie A": "https://www.betclic.pt/futebol-sfootball/italia-serie-a-c6",
+    "Bundesliga": "https://www.betclic.pt/futebol-sfootball/alemanha-bundesliga-c5",
+    "Ligue 1": "https://www.betclic.pt/futebol-sfootball/franca-ligue-1-c4",
+    "Liga Portugal": "https://www.betclic.pt/futebol-sfootball/liga-portugal-betclic-c32",
+    "Champions League": "https://www.betclic.pt/futebol-sfootball/liga-dos-campeoes-c8",
+    "Europa League": "https://www.betclic.pt/futebol-sfootball/c9",
+    "Conference League": "https://www.betclic.pt/futebol-sfootball/c3822",
     # Ligas Árabes
-    "Saudi Pro League": "https://www.betclic.pt/futebol-s1/arabia-saudita-primeira-divisao-c89",
-    "UAE Pro League": "https://www.betclic.pt/futebol-s1/emirados-arabes-unidos-pro-league-c214",
-    "Qatar Stars League": "https://www.betclic.pt/futebol-s1/catar-stars-league-c215",
+    "Saudi Pro League": "https://www.betclic.pt/futebol-sfootball/c89",
+    "UAE Pro League": "https://www.betclic.pt/futebol-sfootball/c214",
+    "Qatar Stars League": "https://www.betclic.pt/futebol-sfootball/c215",
     # Todas as outras competições do dia na Betclic
-    "Geral Futebol": "https://www.betclic.pt/futebol-s1",
+    "Geral Futebol": "https://www.betclic.pt/futebol-sfootball",
 }
 
 HEADERS = {
@@ -42,7 +42,6 @@ class BetclicScraper(BaseBookmakerScraper):
     async def fetch_league_matches(self, league_name: str) -> list[ScrapedMatch]:
         url = BETCLIC_LEAGUES.get(league_name)
         if not url:
-            # Check if generic football page can be used
             url = BETCLIC_LEAGUES["Geral Futebol"]
 
         results = []
@@ -87,7 +86,13 @@ class BetclicScraper(BaseBookmakerScraper):
                         continue
                     kickoff = parser.isoparse(match_date_str)
 
-                    comp_name = match.get("competition", {}).get("name") or league_name
+                    comp_raw = match.get("competition", {}).get("name") or league_name
+                    comp_norm = normalize_league_name(comp_raw)
+
+                    # Strict league scoping: do not allow unrelated competitions from page widgets
+                    if league_name and league_name != "Geral Futebol":
+                        if comp_norm != normalize_league_name(league_name):
+                            continue
 
                     odds_items: list[ScrapedOddsItem] = []
                     market = match.get("market", {})
@@ -121,7 +126,7 @@ class BetclicScraper(BaseBookmakerScraper):
                             bookmaker=self.bookmaker_name,
                             home_team=normalize_team_name(home_team),
                             away_team=normalize_team_name(away_team),
-                            league=comp_name,
+                            league=comp_norm,
                             kickoff=kickoff,
                             odds=odds_items,
                             raw_data={"betclic_match_id": match.get("matchId")}

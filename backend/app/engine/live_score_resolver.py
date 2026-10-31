@@ -56,23 +56,33 @@ class LiveScoreResolver:
     def _match_teams(name1: str, name2: str) -> bool:
         s1 = get_canonical_stem(name1)
         s2 = get_canonical_stem(name2)
-        if s1 == s2:
-            return True
-        if s1 and s2 and (s1 in s2 or s2 in s1):
+        if s1 and s2 and s1 == s2:
             return True
         c1, c2 = clean_string(name1), clean_string(name2)
-        if c1 == c2:
+        if c1 and c2 and c1 == c2:
             return True
-        if c1 and c2 and (c1 in c2 or c2 in c1):
-            return True
-        if abs(len(c1) - len(c2)) <= 6:
+
+        # Whole token comparison
+        tokens1 = set(c1.split())
+        tokens2 = set(c2.split())
+        if tokens1 and tokens2:
+            if tokens1 == tokens2:
+                return True
+            if len(tokens1) >= 2 and tokens1.issubset(tokens2):
+                return True
+            if len(tokens2) >= 2 and tokens2.issubset(tokens1):
+                return True
+
+        if abs(len(c1) - len(c2)) <= 2:
             from difflib import SequenceMatcher
-            return SequenceMatcher(None, c1, c2).quick_ratio() >= 0.70
+            return SequenceMatcher(None, c1, c2).ratio() >= 0.90
         return False
 
     @classmethod
-    async def fetch_espn_scoreboard(cls, league_slug: str) -> list[dict]:
+    async def fetch_espn_scoreboard(cls, league_slug: str, date_str: str | None = None) -> list[dict]:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_slug}/scoreboard"
+        if date_str:
+            url += f"?dates={date_str}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         try:
             async with httpx.AsyncClient(timeout=4.0) as client:
@@ -81,7 +91,7 @@ class LiveScoreResolver:
                     data = res.json()
                     return data.get("events", [])
         except Exception as e:
-            logger.debug(f"[LIVE SCORES] Failed to fetch ESPN scoreboard for {league_slug}: {e}")
+            logger.debug(f"[LIVE SCORES] Failed to fetch ESPN scoreboard for {league_slug} (date={date_str}): {e}")
         return []
 
     @classmethod
@@ -126,21 +136,40 @@ class LiveScoreResolver:
 
             # Group matches by required ESPN league slug
             leagues_to_fetch = set()
+            BRAZILIAN_KEYWORDS = (
+                "flamengo", "coritiba", "gremio", "atletico", "palmeiras", "sao paulo",
+                "bahia", "botafogo", "fluminense", "vasco", "cruzeiro", "internacional",
+                "corinthians", "santos", "bragantino", "chapecoense", "remo", "cuiaba",
+                "fortaleza", "juventude", "criciuma", "vitoria"
+            )
+
+            need_yesterday = False
             for m in active_matches:
                 norm_lg = m.league.lower().strip()
                 slug = ESPN_LEAGUE_MAP.get(norm_lg)
                 if slug:
                     leagues_to_fetch.add(slug)
-                h_low, a_low = m.home_team.lower(), m.away_team.lower()
-                if any(x in h_low or x in a_low for x in ["flamengo", "coritiba", "gremio", "atletico", "palmeiras", "sao paulo"]):
+                h_clean = clean_string(m.home_team)
+                a_clean = clean_string(m.away_team)
+                if any(k in h_clean or k in a_clean for k in BRAZILIAN_KEYWORDS):
                     leagues_to_fetch.add("bra.1")
+                if m.status == MatchStatus.LIVE or m.kickoff < (now_utc - timedelta(hours=2)):
+                    need_yesterday = True
 
             # Fetch only scoreboards for leagues that have active matches
             if not leagues_to_fetch:
                 return 0
 
-            # Fetch scoreboards concurrently
-            tasks = [cls.fetch_espn_scoreboard(slug) for slug in leagues_to_fetch]
+            # Fetch scoreboards concurrently (current day + yesterday if needed for midnight/past matches)
+            tasks = []
+            today_str = now_utc.strftime("%Y%m%d")
+            yesterday_str = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
+
+            for slug in leagues_to_fetch:
+                tasks.append(cls.fetch_espn_scoreboard(slug, date_str=today_str))
+                if need_yesterday:
+                    tasks.append(cls.fetch_espn_scoreboard(slug, date_str=yesterday_str))
+
             scoreboards = await asyncio.gather(*tasks, return_exceptions=True)
 
             all_espn_events = []
