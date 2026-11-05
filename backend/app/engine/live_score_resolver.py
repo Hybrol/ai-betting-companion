@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import json
+import re
 from datetime import datetime, timedelta
 import httpx
 from sqlalchemy.orm import Session
@@ -73,6 +74,12 @@ class LiveScoreResolver:
             if len(s_tokens2) >= 2 and s_tokens2.issubset(s_tokens1):
                 return True
 
+        # Check singular vs plural root match (e.g. hearts vs heart)
+        s1_clean = re.sub(r'[^a-z0-9 ]', '', s1).strip()
+        s2_clean = re.sub(r'[^a-z0-9 ]', '', s2).strip()
+        if s1_clean.rstrip('s') == s2_clean.rstrip('s') and len(s1_clean.rstrip('s')) >= 4:
+            return True
+
         # Whole token comparison
         tokens1 = set(c1.split())
         tokens2 = set(c2.split())
@@ -87,6 +94,19 @@ class LiveScoreResolver:
         if abs(len(c1) - len(c2)) <= 2:
             from difflib import SequenceMatcher
             return SequenceMatcher(None, c1, c2).ratio() >= 0.90
+        return False
+
+    @classmethod
+    def _team_matches(cls, db_team: str, espn_aliases: list[str], espn_stems: list[str]) -> bool:
+        db_stem = get_canonical_stem(db_team)
+        for s in espn_stems:
+            if db_stem == s:
+                return True
+            if len(db_stem) >= 4 and len(s) >= 4 and (db_stem in s or s in db_stem):
+                return True
+        for alias in espn_aliases:
+            if cls._match_teams(alias, db_team):
+                return True
         return False
 
     @classmethod
@@ -225,33 +245,62 @@ class LiveScoreResolver:
                 away_comp = next((c for c in competitors if c.get("homeAway") == "away"), None)
                 if not home_comp or not away_comp:
                     continue
-                h_name = home_comp.get("team", {}).get("displayName") or home_comp.get("team", {}).get("name", "")
-                a_name = away_comp.get("team", {}).get("displayName") or away_comp.get("team", {}).get("name", "")
+                h_team_obj = home_comp.get("team", {})
+                a_team_obj = away_comp.get("team", {})
+                h_name = h_team_obj.get("displayName") or h_team_obj.get("name", "")
+                a_name = a_team_obj.get("displayName") or a_team_obj.get("name", "")
+
+                h_aliases = [
+                    h_team_obj.get("displayName"),
+                    h_team_obj.get("name"),
+                    h_team_obj.get("shortDisplayName"),
+                    h_team_obj.get("nickname")
+                ]
+                a_aliases = [
+                    a_team_obj.get("displayName"),
+                    a_team_obj.get("name"),
+                    a_team_obj.get("shortDisplayName"),
+                    a_team_obj.get("nickname")
+                ]
+                h_aliases = [x.strip() for x in h_aliases if x and isinstance(x, str) and x.strip()]
+                a_aliases = [x.strip() for x in a_aliases if x and isinstance(x, str) and x.strip()]
+
                 parsed_events.append({
                     "h_name": h_name,
                     "a_name": a_name,
-                    "h_stem": get_canonical_stem(h_name),
-                    "a_stem": get_canonical_stem(a_name),
+                    "h_aliases": h_aliases,
+                    "a_aliases": a_aliases,
+                    "h_stems": [get_canonical_stem(x) for x in h_aliases],
+                    "a_stems": [get_canonical_stem(x) for x in a_aliases],
                     "comp": comp,
                     "home_comp": home_comp,
                     "away_comp": away_comp
                 })
 
             for match in active_matches:
-                m_h_stem = get_canonical_stem(match.home_team)
-                m_a_stem = get_canonical_stem(match.away_team)
+                m_h_team = match.home_team
+                m_a_team = match.away_team
 
                 for pev in parsed_events:
-                    h_matched = (m_h_stem == pev["h_stem"] or m_h_stem in pev["h_stem"] or pev["h_stem"] in m_h_stem or cls._match_teams(pev["h_name"], match.home_team))
-                    if not h_matched:
-                        continue
-                    a_matched = (m_a_stem == pev["a_stem"] or m_a_stem in pev["a_stem"] or pev["a_stem"] in m_a_stem or cls._match_teams(pev["a_name"], match.away_team))
-                    if not a_matched:
+                    h_matched = cls._team_matches(m_h_team, pev["h_aliases"], pev["h_stems"])
+                    a_matched = cls._team_matches(m_a_team, pev["a_aliases"], pev["a_stems"])
+                    is_reversed = False
+
+                    if not (h_matched and a_matched):
+                        # Fallback: check if home & away are inverted in ESPN
+                        h_rev = cls._team_matches(m_h_team, pev["a_aliases"], pev["a_stems"])
+                        a_rev = cls._team_matches(m_a_team, pev["h_aliases"], pev["h_stems"])
+                        if h_rev and a_rev:
+                            h_matched = True
+                            a_matched = True
+                            is_reversed = True
+
+                    if not (h_matched and a_matched):
                         continue
 
                     comp = pev["comp"]
-                    home_comp = pev["home_comp"]
-                    away_comp = pev["away_comp"]
+                    home_comp = pev["away_comp"] if is_reversed else pev["home_comp"]
+                    away_comp = pev["home_comp"] if is_reversed else pev["away_comp"]
                     h_score_raw = home_comp.get("score")
                     a_score_raw = away_comp.get("score")
 

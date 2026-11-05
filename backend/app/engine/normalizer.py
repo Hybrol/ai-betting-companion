@@ -368,6 +368,72 @@ CANONICAL_TEAMS: dict[str, str] = {
     "bodo/glimt": "Bodo/Glimt",
     "club brugge": "Club Brugge",
     "brugge": "Club Brugge",
+
+    # ==================== EUROPEAN & SCOTTISH CLUBS ====================
+    "heart of midlothian": "Hearts",
+    "heart of midlothian fc": "Hearts",
+    "hearts": "Hearts",
+    "hearts fc": "Hearts",
+    "fc thun": "Fc Thun",
+    "thun": "Fc Thun",
+    "hibernian": "Hibernian",
+    "hibs": "Hibernian",
+    "celtic": "Celtic",
+    "celtic fc": "Celtic",
+    "rangers": "Rangers",
+    "rangers fc": "Rangers",
+    "aberdeen": "Aberdeen",
+    "estrela vermelha": "Red Star Belgrade",
+    "red star": "Red Star Belgrade",
+    "red star belgrade": "Red Star Belgrade",
+    "crvena zvezda": "Red Star Belgrade",
+    "inter club de escaldes": "Inter D'Escaldes",
+    "inter escaldes": "Inter D'Escaldes",
+    "friburgo": "SC Freiburg",
+    "sc friburgo": "SC Freiburg",
+    "freiburg": "SC Freiburg",
+    "sc freiburg": "SC Freiburg",
+    "copenhaga": "FC Copenhagen",
+    "kobenhavn": "FC Copenhagen",
+    "fc kobenhavn": "FC Copenhagen",
+    "f.c. kobenhavn": "FC Copenhagen",
+    "fc copenhagen": "FC Copenhagen",
+    "lillestrom": "Lillestrom",
+    "lillestrom sk": "Lillestrom",
+    "lillestrom sk.": "Lillestrom",
+    "lillestrøm": "Lillestrom",
+    "lillestrøm sk": "Lillestrom",
+    "viktoria plzen": "FC Viktoria Plzen",
+    "fc viktoria plzen": "FC Viktoria Plzen",
+    "viktoria plzeň": "FC Viktoria Plzen",
+    "union saint-gilloise": "Union Saint-Gilloise",
+    "union saint gilloise": "Union Saint-Gilloise",
+    "union st gilloise": "Union Saint-Gilloise",
+    "union st.-gilloise": "Union Saint-Gilloise",
+    "royale union sg": "Union Saint-Gilloise",
+    "cs universitatea craiova": "CSU Craiova",
+    "universitatea craiova": "CSU Craiova",
+    "csu craiova": "CSU Craiova",
+    "kf egnatia rrogozhine": "Egnatia",
+    "egnatia": "Egnatia",
+    "sint-truidense vv": "Sint-Truidense",
+    "sint truidense": "Sint-Truidense",
+    "sint-truidense": "Sint-Truidense",
+    "brann": "SK Brann",
+    "sk brann": "SK Brann",
+    "zalgiris kaunas": "Kauno Zalgiris",
+    "kauno zalgiris": "Kauno Zalgiris",
+    "lugano": "FC Lugano",
+    "fc lugano": "FC Lugano",
+    "fc iberia 1999": "Iberia 1999",
+    "iberia 1999": "Iberia 1999",
+    "fc nordsjaelland": "FC Nordsjælland",
+    "fc nordsjælland": "FC Nordsjælland",
+    "nordsjaelland": "FC Nordsjælland",
+    "pafos fc": "Pafos",
+    "pafos": "Pafos",
+    "twente": "FC Twente",
+    "fc twente": "FC Twente",
 }
 
 @lru_cache(maxsize=4096)
@@ -375,9 +441,11 @@ def clean_string(s: str) -> str:
     if not s:
         return ""
     s = s.lower().strip()
+    # Normalize special European characters before ASCII encode
+    s = s.replace('ø', 'o').replace('æ', 'ae').replace('ß', 'ss').replace('ł', 'l').replace('đ', 'd').replace('ı', 'i')
     s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
     # Remove common prefixes/suffixes & club acronyms without stripping genuine team names
-    s = re.sub(r'\b(fc|cf|cd|sc|ac|sad|gd|sl|rcd|ca|rj|rs|pr|mg|sp|vfl|vfb|tsg|ogc|rc|afc|bsc|ssc|calcio|us|ss|as|ud)\b', '', s)
+    s = re.sub(r'\b(fc|cf|cd|sc|ac|sad|gd|sl|rcd|ca|rj|rs|pr|mg|sp|vfl|vfb|tsg|ogc|rc|afc|bsc|ssc|calcio|us|ss|as|ud|sk|fk|bk|if|ff)\b', '', s)
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
