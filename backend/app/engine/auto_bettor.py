@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from ..models.schema import Match, PaperBet, Prediction, BetStatus, BookmakerOdds
+from ..models.schema import Match, PaperBet, Prediction, BetStatus, BookmakerOdds, DiscordNotification
 from ..engine.paper_trader import PaperTrader
 from ..engine.discord_notifier import DiscordNotifier
 from ..engine.normalizer import get_canonical_stem
@@ -157,10 +157,25 @@ class AutoBettor:
                 except Exception as e:
                     logger.error(f"[AUTO-BET ERROR] Could not place bet: {e}")
 
-        # 2. Discord Notification (Deduplicated per canonical match with 4-hour window)
+        # 2. Discord Notification (STRICT: Once per match, persistent in DB)
         match_dedup_key = f"{current_h_stem}_vs_{current_a_stem}_{match.kickoff.strftime('%Y%m%d')}"
-        last_notified = NOTIFIED_CACHE.get(match_dedup_key) or NOTIFIED_CACHE.get(match.id)
-        should_notify = (last_notified is None) or (now - last_notified > timedelta(hours=4))
+
+        # If a bet for this match was already placed in a previous run, NEVER re-notify!
+        if existing_match_bet and not auto_bet_placed:
+            return auto_bet_placed
+
+        # Check persistent database deduplication
+        already_notified = db.query(DiscordNotification).filter(
+            (DiscordNotification.dedup_key == match_dedup_key) |
+            (DiscordNotification.match_id == match.id)
+        ).first()
+
+        if already_notified:
+            logger.debug(f"[DISCORD DEDUP] Match '{match.home_team} vs {match.away_team}' already notified. Skipping duplicate.")
+            return auto_bet_placed
+
+        # Only notify if a bet was freshly placed, OR if auto-betting is disabled (recommendation mode)
+        should_notify = auto_bet_placed or (not settings.AUTO_BET_ENABLED)
 
         if should_notify and (settings.DISCORD_WEBHOOK_BETS or settings.DISCORD_WEBHOOK_URL):
             try:
@@ -179,11 +194,17 @@ class AutoBettor:
                     recommended_stake=prediction.recommended_stake,
                     confidence=prediction.confidence or "MÉDIA",
                     reasoning=prediction.reasoning or "",
-                    auto_bet_placed=auto_bet_placed or (existing_match_bet is not None)
+                    auto_bet_placed=auto_bet_placed
                 )
                 if sent:
-                    NOTIFIED_CACHE[match_dedup_key] = now
-                    NOTIFIED_CACHE[match.id] = now
+                    db_notif = DiscordNotification(
+                        dedup_key=match_dedup_key,
+                        match_id=match.id,
+                        notification_type="VALUE_BET"
+                    )
+                    db.add(db_notif)
+                    db.commit()
+                    logger.info(f"[DISCORD DEDUP] Persisted notification record for {match_dedup_key}")
             except Exception as e:
                 logger.error(f"[DISCORD ERROR] Failed to send value bet alert: {e}")
 

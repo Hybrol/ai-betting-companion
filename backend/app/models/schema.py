@@ -135,3 +135,12 @@ class BankrollHistory(Base):
     pnl_delta = Column(Float, nullable=False)
     description = Column(String(255), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+class DiscordNotification(Base):
+    __tablename__ = "discord_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dedup_key = Column(String(128), unique=True, index=True, nullable=False)
+    match_id = Column(Integer, nullable=True, index=True)
+    notification_type = Column(String(32), default="VALUE_BET")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

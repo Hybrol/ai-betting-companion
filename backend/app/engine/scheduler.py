@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..core.config import settings
 from ..core.database import SessionLocal
-from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus, PaperBet, BetStatus
+from ..models.schema import Match, BookmakerOdds, Prediction, MatchStatus, PaperBet, BetStatus, DiscordNotification
 from ..engine.normalizer import create_match_key, get_canonical_stem, normalize_team_name, normalize_league_name
 from ..engine.predictor import MatchPredictor
 from ..engine.value_finder import ValueFinder, ValueOpportunity
@@ -279,42 +279,32 @@ async def execute_betting_cycle(target_league: str | None = None):
                     except Exception as e:
                         logger.error(f"[AUTO-BET MULTIPLE ERROR] Could not place multiple: {e}")
 
-            # 3. Discord Webhook Notification with deduplication
+            # 3. Discord Webhook Notification with persistent deduplication
             if settings.DISCORD_WEBHOOK_BETS or settings.DISCORD_WEBHOOK_URL:
                 multi_sig = get_multiple_signature(curated_multiple)
+                multiple_dedup_key = f"MULTIPLE_{today_str}_{multi_sig}"
 
-                last_sig = LAST_MULTIPLE_NOTIFICATION.get("signature")
-                last_date = LAST_MULTIPLE_NOTIFICATION.get("date")
-                last_time = LAST_MULTIPLE_NOTIFICATION.get("timestamp")
+                already_notified_multi = db.query(DiscordNotification).filter(
+                    DiscordNotification.dedup_key == multiple_dedup_key
+                ).first()
 
-                is_same_signature = (multi_sig == last_sig)
-                is_same_day = (last_date == today_str)
-
-                should_notify_multiple = False
-                if not is_same_day:
-                    should_notify_multiple = True
-                elif not is_same_signature:
-                    # Selections changed today: allow re-dispatch only if at least 2 hours elapsed
-                    if last_time is None or (now_utc - last_time).total_seconds() >= 7200:
-                        should_notify_multiple = True
-                    else:
-                        logger.info(
-                            f"[DISCORD SKIPPED] Curated multiple changed but cooldown active "
-                            f"({int((now_utc - last_time).total_seconds())}s / 7200s)."
-                        )
-                else:
+                if already_notified_multi:
                     logger.info(
-                        f"[DISCORD SKIPPED] Curated multiple already dispatched for today ({today_str}) "
-                        f"with identical selections: {multi_sig}."
+                        f"[DISCORD SKIPPED] Curated multiple already dispatched for today ({today_str}): {multi_sig}."
                     )
-
-                if should_notify_multiple:
+                else:
                     sent = await DiscordNotifier.notify_curated_multiple(curated_multiple)
                     if sent:
+                        db_multi_notif = DiscordNotification(
+                            dedup_key=multiple_dedup_key,
+                            notification_type="CURATED_MULTIPLE"
+                        )
+                        db.add(db_multi_notif)
+                        db.commit()
                         LAST_MULTIPLE_NOTIFICATION["signature"] = multi_sig
                         LAST_MULTIPLE_NOTIFICATION["date"] = today_str
                         LAST_MULTIPLE_NOTIFICATION["timestamp"] = now_utc
-                        logger.info(f"[DISCORD] Curated multiple successfully dispatched: {multi_sig}")
+                        logger.info(f"[DISCORD DEDUP] Curated multiple successfully dispatched & persisted: {multi_sig}")
 
         logger.info(
             f"=== [CRON] Elite Cycle Completed! Found {total_new_opportunities} quality +EV opportunities, "

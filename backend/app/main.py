@@ -73,6 +73,30 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Seed existing paper bets into discord_notifications to prevent duplicate notifications
+    db_notif = SessionLocal()
+    try:
+        from .models.schema import DiscordNotification
+        from .engine.normalizer import get_canonical_stem
+        all_bets = db_notif.query(PaperBet).filter(PaperBet.match_id.isnot(None)).all()
+        added_count = 0
+        for b in all_bets:
+            if b.match:
+                h_stem = get_canonical_stem(b.match.home_team)
+                a_stem = get_canonical_stem(b.match.away_team)
+                d_key = f"{h_stem}_vs_{a_stem}_{b.match.kickoff.strftime('%Y%m%d')}"
+                exists = db_notif.query(DiscordNotification).filter(DiscordNotification.dedup_key == d_key).first()
+                if not exists:
+                    db_notif.add(DiscordNotification(dedup_key=d_key, match_id=b.match_id, notification_type="VALUE_BET"))
+                    added_count += 1
+        if added_count > 0:
+            db_notif.commit()
+            logger.info(f"[DISCORD DEDUP] Seeded {added_count} historical bets into persistent deduplication store.")
+    except Exception as e:
+        logger.debug(f"[DISCORD DEDUP] Startup seed note: {e}")
+    finally:
+        db_notif.close()
+
     # Automatic Match & Prediction Deduplication
     db_cleanup = SessionLocal()
     try:
