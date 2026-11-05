@@ -79,15 +79,16 @@ async def lifespan(app: FastAPI):
         from .models.schema import DiscordNotification
         from .engine.normalizer import get_canonical_stem
         all_bets = db_notif.query(PaperBet).filter(PaperBet.match_id.isnot(None)).all()
+        seen_keys = set(r[0] for r in db_notif.query(DiscordNotification.dedup_key).all())
         added_count = 0
         for b in all_bets:
             if b.match:
                 h_stem = get_canonical_stem(b.match.home_team)
                 a_stem = get_canonical_stem(b.match.away_team)
                 d_key = f"{h_stem}_vs_{a_stem}_{b.match.kickoff.strftime('%Y%m%d')}"
-                exists = db_notif.query(DiscordNotification).filter(DiscordNotification.dedup_key == d_key).first()
-                if not exists:
+                if d_key not in seen_keys:
                     db_notif.add(DiscordNotification(dedup_key=d_key, match_id=b.match_id, notification_type="VALUE_BET"))
+                    seen_keys.add(d_key)
                     added_count += 1
         if added_count > 0:
             db_notif.commit()
