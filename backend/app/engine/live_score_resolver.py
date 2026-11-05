@@ -62,6 +62,17 @@ class LiveScoreResolver:
         if c1 and c2 and c1 == c2:
             return True
 
+        # Stem tokens comparison
+        s_tokens1 = set(s1.split())
+        s_tokens2 = set(s2.split())
+        if s_tokens1 and s_tokens2:
+            if s_tokens1 == s_tokens2:
+                return True
+            if len(s_tokens1) >= 2 and s_tokens1.issubset(s_tokens2):
+                return True
+            if len(s_tokens2) >= 2 and s_tokens2.issubset(s_tokens1):
+                return True
+
         # Whole token comparison
         tokens1 = set(c1.split())
         tokens2 = set(c2.split())
@@ -117,12 +128,27 @@ class LiveScoreResolver:
             # Matches with PENDING paper bets OR currently LIVE matches (even across midnight!)
             # OR scheduled matches within the last 36h / next 24h
             pending_subquery = db.query(PaperBet.match_id).filter(
-                PaperBet.status == BetStatus.PENDING
+                PaperBet.status == BetStatus.PENDING,
+                PaperBet.match_id.isnot(None)
             ).distinct().all()
-            pending_ids = [m[0] for m in pending_subquery]
+            pending_ids = set(m[0] for m in pending_subquery)
+
+            # Also inspect legs of any pending multiple bets
+            pending_multiples = db.query(PaperBet).filter(
+                PaperBet.is_multiple == True,
+                PaperBet.status == BetStatus.PENDING
+            ).all()
+            for mb in pending_multiples:
+                try:
+                    legs = json.loads(mb.multiple_legs or "[]")
+                    for leg in legs:
+                        if leg.get("match_id"):
+                            pending_ids.add(leg["match_id"])
+                except Exception:
+                    pass
 
             active_matches = db.query(Match).filter(
-                (Match.id.in_(pending_ids)) |
+                (Match.id.in_(list(pending_ids))) |
                 (Match.status == MatchStatus.LIVE) |
                 (
                     (Match.kickoff >= cutoff_past) &
@@ -134,8 +160,7 @@ class LiveScoreResolver:
             if not active_matches:
                 return 0
 
-            # Group matches by required ESPN league slug
-            leagues_to_fetch = set()
+            # Group matches by required ESPN league slug & dates
             BRAZILIAN_KEYWORDS = (
                 "flamengo", "coritiba", "gremio", "atletico", "palmeiras", "sao paulo",
                 "bahia", "botafogo", "fluminense", "vasco", "cruzeiro", "internacional",
@@ -143,32 +168,44 @@ class LiveScoreResolver:
                 "fortaleza", "juventude", "criciuma", "vitoria"
             )
 
-            need_yesterday = False
-            for m in active_matches:
-                norm_lg = m.league.lower().strip()
-                slug = ESPN_LEAGUE_MAP.get(norm_lg)
-                if slug:
-                    leagues_to_fetch.add(slug)
-                h_clean = clean_string(m.home_team)
-                a_clean = clean_string(m.away_team)
-                if any(k in h_clean or k in a_clean for k in BRAZILIAN_KEYWORDS):
-                    leagues_to_fetch.add("bra.1")
-                if m.status == MatchStatus.LIVE or m.kickoff < (now_utc - timedelta(hours=2)):
-                    need_yesterday = True
-
-            # Fetch only scoreboards for leagues that have active matches
-            if not leagues_to_fetch:
-                return 0
-
-            # Fetch scoreboards concurrently (current day + yesterday if needed for midnight/past matches)
-            tasks = []
+            league_dates: dict[str, set[str]] = {}
             today_str = now_utc.strftime("%Y%m%d")
             yesterday_str = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
 
-            for slug in leagues_to_fetch:
-                tasks.append(cls.fetch_espn_scoreboard(slug, date_str=today_str))
-                if need_yesterday:
-                    tasks.append(cls.fetch_espn_scoreboard(slug, date_str=yesterday_str))
+            for m in active_matches:
+                norm_lg = m.league.lower().strip()
+                slug = ESPN_LEAGUE_MAP.get(norm_lg)
+                if not slug:
+                    from .normalizer import normalize_league_name
+                    slug = ESPN_LEAGUE_MAP.get(normalize_league_name(m.league).lower())
+
+                target_slugs = []
+                if slug:
+                    target_slugs.append(slug)
+                h_clean = clean_string(m.home_team)
+                a_clean = clean_string(m.away_team)
+                if any(k in h_clean or k in a_clean for k in BRAZILIAN_KEYWORDS):
+                    target_slugs.append("bra.1")
+
+                m_dates = {today_str}
+                if m.status == MatchStatus.LIVE or (m.kickoff and m.kickoff < (now_utc - timedelta(hours=2))):
+                    m_dates.add(yesterday_str)
+                if m.kickoff:
+                    m_dates.add(m.kickoff.strftime("%Y%m%d"))
+
+                for s in target_slugs:
+                    if s not in league_dates:
+                        league_dates[s] = set()
+                    league_dates[s].update(m_dates)
+
+            if not league_dates:
+                return 0
+
+            # Fetch scoreboards concurrently for each league and all required dates
+            tasks = []
+            for slug, dates in league_dates.items():
+                for d_str in dates:
+                    tasks.append(cls.fetch_espn_scoreboard(slug, date_str=d_str))
 
             scoreboards = await asyncio.gather(*tasks, return_exceptions=True)
 
