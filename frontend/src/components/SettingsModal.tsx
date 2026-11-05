@@ -12,7 +12,9 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModalProps) {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookBets, setWebhookBets] = useState("");
+  const [webhookGreens, setWebhookGreens] = useState("");
+  const [webhookReds, setWebhookReds] = useState("");
   const [autoBet, setAutoBet] = useState(true);
   const [loading, setLoading] = useState(false);
   const [testingDiscord, setTestingDiscord] = useState(false);
@@ -30,7 +32,9 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
       const data = await fetchSettings();
       setSettings(data);
       setAutoBet(data.auto_bet_enabled);
-      setWebhookUrl(data.discord_webhook_preview ? "" : "");
+      setWebhookBets(data.discord_webhook_bets || "");
+      setWebhookGreens(data.discord_webhook_greens || "");
+      setWebhookReds(data.discord_webhook_reds || "");
     } catch (err) {
       console.error(err);
     }
@@ -45,7 +49,9 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
     try {
       await updateSettings({
         auto_bet_enabled: autoBet,
-        discord_webhook_url: webhookUrl.trim() ? webhookUrl.trim() : undefined,
+        discord_webhook_bets: webhookBets.trim() || undefined,
+        discord_webhook_greens: webhookGreens.trim() || undefined,
+        discord_webhook_reds: webhookReds.trim() || undefined,
       });
       setStatusMsg({ type: "success", text: "Settings saved successfully!" });
       if (onSaved) onSaved();
@@ -61,8 +67,8 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
     setTestingDiscord(true);
     setStatusMsg(null);
     try {
-      const res = await testDiscordWebhook(webhookUrl.trim() || undefined);
-      setStatusMsg({ type: "success", text: "Test alert dispatched to Discord channel!" });
+      await testDiscordWebhook(undefined);
+      setStatusMsg({ type: "success", text: "Test alerts dispatched to Discord channels!" });
     } catch (err: any) {
       setStatusMsg({ type: "error", text: err.message || "Discord test failed." });
     } finally {
@@ -170,29 +176,65 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
             </button>
           </div>
 
-          {/* Discord Webhook Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
+          {/* Discord Multi-Channel Webhooks */}
+          <div className="space-y-3 pt-1 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <Bell className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Discord Webhook URL</span>
+                <span>Canais Discord (Webhooks Separados)</span>
               </span>
               {settings?.discord_configured && (
                 <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Connected
+                  Ativos
                 </span>
               )}
-            </label>
-            <input
-              type="url"
-              placeholder="https://discord.com/api/webhooks/..."
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-medium focus:outline-none focus:border-emerald-500 text-xs"
-            />
-            <p className="text-[11px] text-slate-400">
-              When a good bet is discovered, a rich alert will be sent with the odds of each casino for that match.
+            </div>
+
+            {/* BETS */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-indigo-300 flex items-center gap-1">
+                <span>🎯 Canal Apostas (BETS):</span>
+              </label>
+              <input
+                type="url"
+                placeholder="https://discord.com/api/webhooks/..."
+                value={webhookBets}
+                onChange={(e) => setWebhookBets(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-medium focus:outline-none focus:border-indigo-500 text-xs"
+              />
+            </div>
+
+            {/* GREENS */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
+                <span>🟢 Canal Ganhos (GREENS):</span>
+              </label>
+              <input
+                type="url"
+                placeholder="https://discord.com/api/webhooks/..."
+                value={webhookGreens}
+                onChange={(e) => setWebhookGreens(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-medium focus:outline-none focus:border-emerald-500 text-xs"
+              />
+            </div>
+
+            {/* REDS */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-rose-400 flex items-center gap-1">
+                <span>🔴 Canal Perdas (REDS):</span>
+              </label>
+              <input
+                type="url"
+                placeholder="https://discord.com/api/webhooks/..."
+                value={webhookReds}
+                onChange={(e) => setWebhookReds(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-medium focus:outline-none focus:border-rose-500 text-xs"
+              />
+            </div>
+
+            <p className="text-[10px] text-slate-400">
+              Cada evento será roteado automaticamente para o respetivo canal do teu servidor Discord.
             </p>
           </div>
 
@@ -200,18 +242,18 @@ export default function SettingsModal({ isOpen, onClose, onSaved }: SettingsModa
             <button
               type="button"
               onClick={handleTestDiscord}
-              disabled={testingDiscord || (!webhookUrl && !settings?.discord_configured)}
+              disabled={testingDiscord || (!webhookBets && !webhookGreens && !webhookReds && !settings?.discord_configured)}
               className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition border border-slate-700 flex items-center justify-center gap-1.5 disabled:opacity-40"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{testingDiscord ? "Sending..." : "Test Webhook"}</span>
+              <span>{testingDiscord ? "A testar..." : "Testar Canais"}</span>
             </button>
             <button
               type="submit"
               disabled={loading}
               className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/30 disabled:opacity-50"
             >
-              {loading ? "Saving..." : "Save Settings"}
+              {loading ? "A guardar..." : "Guardar Definições"}
             </button>
           </div>
         </form>

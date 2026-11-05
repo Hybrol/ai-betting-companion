@@ -180,6 +180,9 @@ export interface SystemSettings {
   cron_interval_minutes: number;
   discord_configured: boolean;
   discord_webhook_preview?: string;
+  discord_webhook_bets?: string;
+  discord_webhook_greens?: string;
+  discord_webhook_reds?: string;
   min_ev_threshold: number;
   kelly_fraction: number;
   max_bet_percentage: number;
@@ -288,6 +291,9 @@ export async function fetchSettings(): Promise<SystemSettings> {
 export async function updateSettings(data: {
   auto_bet_enabled?: boolean;
   discord_webhook_url?: string;
+  discord_webhook_bets?: string;
+  discord_webhook_greens?: string;
+  discord_webhook_reds?: string;
   min_ev_threshold?: number;
 }): Promise<any> {
   const res = await fetch(`${API_BASE_URL}/settings`, {

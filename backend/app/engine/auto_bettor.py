@@ -162,7 +162,7 @@ class AutoBettor:
         last_notified = NOTIFIED_CACHE.get(match_dedup_key) or NOTIFIED_CACHE.get(match.id)
         should_notify = (last_notified is None) or (now - last_notified > timedelta(hours=4))
 
-        if should_notify and settings.DISCORD_WEBHOOK_URL:
+        if should_notify and (settings.DISCORD_WEBHOOK_BETS or settings.DISCORD_WEBHOOK_URL):
             try:
                 sent = await DiscordNotifier.notify_value_bet(
                     home_team=match.home_team,

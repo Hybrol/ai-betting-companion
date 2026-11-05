@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     AUTO_BET_ENABLED: bool = True      # Automatically place simulated bets on good opportunities
     CRON_INTERVAL_MINUTES: int = 30    # 30-minute recurring inspection
     DISCORD_WEBHOOK_URL: str | None = os.getenv("DISCORD_WEBHOOK_URL", None)
+    DISCORD_WEBHOOK_BETS: str | None = os.getenv(
+        "DISCORD_WEBHOOK_BETS",
+        "https://discord.com/api/webhooks/1567847165944930436/YFIs-YY8KaQXWJlQ7NO0PXlLgt4tKNTyEZ6BaFhUpXVrcr6S5SXYQylBv1PLY9x2iXts"
+    )
+    DISCORD_WEBHOOK_GREENS: str | None = os.getenv(
+        "DISCORD_WEBHOOK_GREENS",
+        "https://discord.com/api/webhooks/1567847329598410812/SAAg4287H6OUjzcjfGwoQrosGM5djp4VvXXZacNo5ab4uis87VdXzPZUq9Hh4YxKysZc"
+    )
+    DISCORD_WEBHOOK_REDS: str | None = os.getenv(
+        "DISCORD_WEBHOOK_REDS",
+        "https://discord.com/api/webhooks/1567847472758263858/yDkQwm9xi2RFHNlyDatZ0H6RaFpXggtK-TO0qJ9ExfWA4KSd7uSjI93UaPSgBZufOKyX"
+    )
     RESPONSIBLE_GAMBLING_MSG: str = "Aposta com responsabilidade (+18, Linha SICAD 1414)"
     
     # Priority & Monitored Football Leagues

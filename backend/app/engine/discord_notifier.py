@@ -29,9 +29,9 @@ SELECTION_LABELS_PT = {
 
 class DiscordNotifier:
     @staticmethod
-    async def send_webhook_message(embeds: list[dict], content: str = "") -> bool:
-        webhook_url = settings.DISCORD_WEBHOOK_URL
-        if not webhook_url:
+    async def send_webhook_message(embeds: list[dict], content: str = "", webhook_url: str | None = None) -> bool:
+        target_url = webhook_url or settings.DISCORD_WEBHOOK_URL
+        if not target_url:
             logger.debug("Discord Webhook URL not configured. Skipping webhook.")
             return False
 
@@ -44,7 +44,7 @@ class DiscordNotifier:
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(webhook_url, json=payload)
+                res = await client.post(target_url, json=payload)
                 if res.status_code in (200, 204):
                     logger.info("Successfully sent Discord webhook notification.")
                     return True
@@ -107,7 +107,8 @@ class DiscordNotifier:
             "timestamp": datetime.utcnow().isoformat()
         }
 
-        return await cls.send_webhook_message(embeds=[embed])
+        url = settings.DISCORD_WEBHOOK_BETS or settings.DISCORD_WEBHOOK_URL
+        return await cls.send_webhook_message(embeds=[embed], webhook_url=url)
 
     @classmethod
     async def notify_curated_multiple(cls, multiple_data: dict) -> bool:
@@ -154,7 +155,8 @@ class DiscordNotifier:
             "timestamp": datetime.utcnow().isoformat()
         }
 
-        return await cls.send_webhook_message(embeds=[embed])
+        url = settings.DISCORD_WEBHOOK_BETS or settings.DISCORD_WEBHOOK_URL
+        return await cls.send_webhook_message(embeds=[embed], webhook_url=url)
 
     @classmethod
     async def notify_multiple_result(
@@ -167,7 +169,8 @@ class DiscordNotifier:
         is_green: bool,
         current_balance: float
     ) -> bool:
-        if not settings.DISCORD_WEBHOOK_URL:
+        target_url = (settings.DISCORD_WEBHOOK_GREENS if is_green else settings.DISCORD_WEBHOOK_REDS) or settings.DISCORD_WEBHOOK_URL
+        if not target_url:
             return False
 
         title = f"{'🎉 MÚLTIPLA DE VALOR GREEN!' if is_green else '❌ Múltipla de Valor Resolvida (RED)'}"
@@ -198,7 +201,7 @@ class DiscordNotifier:
             },
             "timestamp": datetime.utcnow().isoformat()
         }
-        return await cls.send_webhook_message(embeds=[embed])
+        return await cls.send_webhook_message(embeds=[embed], webhook_url=target_url)
 
     @classmethod
     async def notify_bet_result(
@@ -217,6 +220,10 @@ class DiscordNotifier:
         is_green: bool,
         current_balance: float
     ) -> bool:
+        target_url = (settings.DISCORD_WEBHOOK_GREENS if is_green else settings.DISCORD_WEBHOOK_REDS) or settings.DISCORD_WEBHOOK_URL
+        if not target_url:
+            return False
+
         market_name = MARKET_LABELS_PT.get(market_type, market_type)
         sel_name = SELECTION_LABELS_PT.get(selection, selection)
         score_str = f"{home_team} {home_score} - {away_score} {away_team}"
@@ -247,44 +254,62 @@ class DiscordNotifier:
             "timestamp": datetime.utcnow().isoformat()
         }
 
-        return await cls.send_webhook_message(embeds=[embed])
+        return await cls.send_webhook_message(embeds=[embed], webhook_url=target_url)
 
     @classmethod
     async def send_test_notification(cls, webhook_url: str | None = None) -> tuple[bool, str]:
-        url = webhook_url or settings.DISCORD_WEBHOOK_URL
-        if not url:
+        if webhook_url:
+            targets = [("Personalizado", webhook_url, 0x3b82f6)]
+        else:
+            targets = []
+            if settings.DISCORD_WEBHOOK_BETS:
+                targets.append(("BETS", settings.DISCORD_WEBHOOK_BETS, 0x3b82f6))
+            if settings.DISCORD_WEBHOOK_GREENS:
+                targets.append(("GREENS", settings.DISCORD_WEBHOOK_GREENS, 0x10b981))
+            if settings.DISCORD_WEBHOOK_REDS:
+                targets.append(("REDS", settings.DISCORD_WEBHOOK_REDS, 0xef4444))
+            if not targets and settings.DISCORD_WEBHOOK_URL:
+                targets.append(("Geral", settings.DISCORD_WEBHOOK_URL, 0x10b981))
+
+        if not targets:
             return False, "Nenhum URL de webhook configurado"
 
-        embed = {
-            "title": "✅ AI Tipster de Elite: Notificações Ativas",
-            "description": (
-                "O bot de apostas de valor para casas portuguesas (SRIJ) está conectado a este canal.\n\n"
-                "**Ligas Prioritárias Ativas:**\n"
-                "• Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Liga Portugal\n"
-                "• Champions League, Europa League, Conference League\n"
-                "• Saudi Pro League, UAE Pro League, Qatar Stars League\n\n"
-                "**Mercados Analisados:**\n"
-                "• 1X2, Dupla Chance, Over/Under 1.5/2.5/3.5, Ambas Marcam (BTTS)\n\n"
-                f"*{settings.RESPONSIBLE_GAMBLING_MSG}*"
-            ),
-            "color": 0x10b981,
-            "footer": {
-                "text": "Portuguese AI Betting Companion • Monitorização 24/7"
-            },
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        results = []
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for name, url, color in targets:
+                embed = {
+                    "title": f"✅ AI Tipster de Elite: Canal {name} Conectado",
+                    "description": (
+                        f"O bot de apostas de valor (SRIJ) está conectado com sucesso ao canal **{name}**.\n\n"
+                        "**Ligas Prioritárias Ativas:**\n"
+                        "• Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Liga Portugal\n"
+                        "• Champions League, Europa League, Conference League\n"
+                        "• Saudi Pro League, UAE Pro League, Qatar Stars League\n\n"
+                        "**Mercados Analisados:**\n"
+                        "• 1X2, Dupla Chance, Over/Under 1.5/2.5/3.5, Ambas Marcam (BTTS)\n\n"
+                        f"*{settings.RESPONSIBLE_GAMBLING_MSG}*"
+                    ),
+                    "color": color,
+                    "footer": {
+                        "text": f"Portuguese AI Betting Companion • Canal {name}"
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                }
 
-        payload = {
-            "username": "AI Tipster de Elite (SRIJ)",
-            "embeds": [embed]
-        }
+                payload = {
+                    "username": f"AI Tipster ({name})",
+                    "avatar_url": "https://img.icons8.com/color/96/football2--v1.png",
+                    "embeds": [embed]
+                }
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code in (200, 204):
-                    return True, "Mensagem de teste enviada com sucesso!"
-                else:
-                    return False, f"Erro HTTP {res.status_code}: {res.text}"
-        except Exception as e:
-            return False, str(e)
+                try:
+                    res = await client.post(url, json=payload)
+                    if res.status_code in (200, 204):
+                        results.append(f"{name}: OK")
+                    else:
+                        results.append(f"{name}: Erro {res.status_code}")
+                except Exception as e:
+                    results.append(f"{name}: {e}")
+
+        success = any("OK" in r for r in results)
+        return success, f"Resultado dos testes: {', '.join(results)}"

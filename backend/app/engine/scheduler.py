@@ -280,7 +280,7 @@ async def execute_betting_cycle(target_league: str | None = None):
                         logger.error(f"[AUTO-BET MULTIPLE ERROR] Could not place multiple: {e}")
 
             # 3. Discord Webhook Notification with deduplication
-            if settings.DISCORD_WEBHOOK_URL:
+            if settings.DISCORD_WEBHOOK_BETS or settings.DISCORD_WEBHOOK_URL:
                 multi_sig = get_multiple_signature(curated_multiple)
 
                 last_sig = LAST_MULTIPLE_NOTIFICATION.get("signature")
