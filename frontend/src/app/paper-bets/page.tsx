@@ -1,8 +1,52 @@
 "use client";
 
 import { useEffect, useState, Fragment } from "react";
-import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert, RefreshCw, ChevronDown, ChevronUp, BarChart3, Layers, Sparkles } from "lucide-react";
+import { History, CheckCircle2, XCircle, Clock, RotateCcw, ShieldAlert, RefreshCw, ChevronDown, ChevronUp, BarChart3, Layers, Sparkles, Calendar, Filter } from "lucide-react";
 import { fetchPaperBets, resetBankroll, checkLiveScores, PaperBetItem, MultipleLegItem } from "@/lib/api";
+
+type DateFilterType = "ALL" | "TODAY" | "YESTERDAY" | "WEEK";
+
+const isDateMatch = (bet: PaperBetItem, dateFilter: DateFilterType): boolean => {
+  if (dateFilter === "ALL") return true;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const todayEnd = todayStart + 24 * 60 * 60 * 1000;
+  const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
+  const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
+
+  const timestamps: number[] = [];
+  if (bet.placed_at) {
+    const t = new Date(bet.placed_at).getTime();
+    if (!isNaN(t)) timestamps.push(t);
+  }
+  if (bet.resolved_at) {
+    const t = new Date(bet.resolved_at).getTime();
+    if (!isNaN(t)) timestamps.push(t);
+  }
+  if (bet.is_multiple && Array.isArray(bet.multiple_legs)) {
+    for (const leg of bet.multiple_legs) {
+      if (leg.kickoff) {
+        const t = new Date(leg.kickoff).getTime();
+        if (!isNaN(t)) timestamps.push(t);
+      }
+    }
+  }
+
+  if (timestamps.length === 0) return true;
+
+  if (dateFilter === "TODAY") {
+    return timestamps.some((t) => t >= todayStart && t < todayEnd);
+  }
+  if (dateFilter === "YESTERDAY") {
+    return timestamps.some((t) => t >= yesterdayStart && t < todayStart);
+  }
+  if (dateFilter === "WEEK") {
+    return timestamps.some((t) => t >= weekStart && t < todayEnd);
+  }
+
+  return true;
+};
 
 const MARKET_FORMAT_NAMES: Record<string, string> = {
   "1X2": "1X2 (Resultado Final)",
@@ -16,6 +60,7 @@ const MARKET_FORMAT_NAMES: Record<string, string> = {
 export default function PaperBetsPage() {
   const [bets, setBets] = useState<PaperBetItem[]>([]);
   const [filter, setFilter] = useState<string>("ALL");
+  const [dateFilter, setDateFilter] = useState<DateFilterType>("ALL");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkingLive, setCheckingLive] = useState(false);
@@ -31,8 +76,7 @@ export default function PaperBetsPage() {
         setLoading(true);
         setError(null);
       }
-      const statusParam = filter === "ALL" ? undefined : filter;
-      const data = await fetchPaperBets(statusParam);
+      const data = await fetchPaperBets();
       setBets(data || []);
       setError(null);
     } catch (err: any) {
@@ -52,7 +96,7 @@ export default function PaperBetsPage() {
       loadBets(true);
     }, 20000);
     return () => clearInterval(interval);
-  }, [filter]);
+  }, []);
 
   const handleCheckLive = async () => {
     try {
@@ -72,6 +116,29 @@ export default function PaperBetsPage() {
       loadBets();
     }
   };
+
+  // Bets filtered only by date (to keep status tab counts dynamically synced)
+  const dateFilteredBets = bets.filter((b) => isDateMatch(b, dateFilter));
+
+  const counts = {
+    all: dateFilteredBets.length,
+    pending: dateFilteredBets.filter((b) => b.status === "PENDING").length,
+    green: dateFilteredBets.filter((b) => b.status === "GREEN").length,
+    red: dateFilteredBets.filter((b) => b.status === "RED").length,
+  };
+
+  // Final displayed bets (filtered by date AND status)
+  const displayedBets = dateFilteredBets.filter((b) => {
+    if (filter === "ALL") return true;
+    return b.status === filter;
+  });
+
+  // Calculate stats for current period and filter selection
+  const periodPnL = displayedBets.reduce((acc, b) => acc + (b.profit_loss || 0), 0);
+  const periodStaked = displayedBets.reduce((acc, b) => acc + (b.stake || 0), 0);
+  const periodGreens = displayedBets.filter((b) => b.status === "GREEN").length;
+  const periodReds = displayedBets.filter((b) => b.status === "RED").length;
+  const periodPending = displayedBets.filter((b) => b.status === "PENDING").length;
 
   return (
     <div className="space-y-6">
@@ -108,21 +175,103 @@ export default function PaperBetsPage() {
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 p-1 bg-slate-900/60 border border-slate-800 rounded-xl w-fit">
-        {["ALL", "PENDING", "GREEN", "RED"].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${
-              filter === status
-                ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            {status}
-          </button>
-        ))}
+      {/* Filter Toolbar: Status Tabs & Date Filter Tabs */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1.5 p-1 bg-slate-900/80 border border-slate-800 rounded-xl overflow-x-auto">
+          {[
+            { id: "ALL", label: "Todas", count: counts.all, color: "text-slate-300" },
+            { id: "PENDING", label: "Pendentes", count: counts.pending, color: "text-amber-400" },
+            { id: "GREEN", label: "Greens", count: counts.green, color: "text-emerald-400" },
+            { id: "RED", label: "Reds", count: counts.red, color: "text-rose-400" },
+          ].map((tab) => {
+            const isActive = filter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setFilter(tab.id)}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                  isActive
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-bold"
+                    : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    isActive ? "bg-black/30 text-white" : "bg-slate-800 " + tab.color
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Date Filter Tabs */}
+        <div className="flex items-center gap-1 p-1 bg-slate-900/80 border border-slate-800 rounded-xl self-start lg:self-auto overflow-x-auto">
+          <div className="px-2.5 py-1 text-slate-400 text-xs font-bold flex items-center gap-1.5 border-r border-slate-800 mr-1">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Período:</span>
+          </div>
+          {[
+            { id: "ALL", label: "Histórico Total" },
+            { id: "TODAY", label: "Hoje" },
+            { id: "YESTERDAY", label: "Ontem" },
+            { id: "WEEK", label: "7 Dias" },
+          ].map((dTab) => {
+            const isActive = dateFilter === dTab.id;
+            return (
+              <button
+                key={dTab.id}
+                onClick={() => setDateFilter(dTab.id as DateFilterType)}
+                className={`px-3 py-1.5 rounded-lg text-xs transition whitespace-nowrap ${
+                  isActive
+                    ? "bg-slate-700 text-white shadow-sm border border-slate-600 font-bold"
+                    : "text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium"
+                }`}
+              >
+                {dTab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Period Stats Summary Bar */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Apostas Exibidas</div>
+          <div className="text-lg font-black text-white mt-0.5">{displayedBets.length}</div>
+          <div className="text-[11px] text-slate-500 font-medium">
+            {dateFilter === "TODAY" ? "Período: Apenas Hoje" : dateFilter === "YESTERDAY" ? "Período: Ontem" : dateFilter === "WEEK" ? "Últimos 7 dias" : "Todo o histórico"}
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Greens / Reds</div>
+          <div className="text-lg font-black text-white mt-0.5">
+            <span className="text-emerald-400">{periodGreens}W</span> - <span className="text-rose-400">{periodReds}L</span>
+          </div>
+          <div className="text-[11px] text-amber-400/90 font-medium">{periodPending} pendentes</div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Apostado</div>
+          <div className="text-lg font-black text-slate-200 mt-0.5">{periodStaked.toFixed(2)} €</div>
+          <div className="text-[11px] text-slate-500 font-medium">Volume das apostas exibidas</div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Lucro / PnL</div>
+          <div className={`text-lg font-black mt-0.5 ${periodPnL >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+            {periodPnL >= 0 ? `+${periodPnL.toFixed(2)}` : periodPnL.toFixed(2)} €
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium">
+            ROI: {periodStaked > 0 ? `${((periodPnL / periodStaked) * 100).toFixed(1)}%` : "0.0%"}
+          </div>
+        </div>
       </div>
 
       {/* Bets Table */}
@@ -145,9 +294,9 @@ export default function PaperBetsPage() {
               Tentar Novamente
             </button>
           </div>
-        ) : bets.length === 0 ? (
+        ) : displayedBets.length === 0 ? (
           <div className="py-16 text-center text-slate-500 text-sm">
-            Nenhuma aposta neste filtro. As oportunidades automáticas serão colocadas no próximo ciclo de 30 minutos!
+            Nenhuma aposta encontrada para os filtros selecionados (Estado: {filter} &bull; Período: {dateFilter === "TODAY" ? "Hoje" : dateFilter === "YESTERDAY" ? "Ontem" : dateFilter === "WEEK" ? "Últimos 7 dias" : "Histórico Total"}).
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -166,7 +315,7 @@ export default function PaperBetsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {bets.map((b) => {
+                {displayedBets.map((b) => {
                   const isGreen = b.status === "GREEN";
                   const isRed = b.status === "RED";
                   const isPending = b.status === "PENDING";

@@ -121,6 +121,7 @@ export interface MultipleLegItem {
   home_score?: number | null;
   away_score?: number | null;
   match_status?: string;
+  kickoff?: string;
   stats_analysis?: {
     home: TeamStatDetails;
     away: TeamStatDetails;
