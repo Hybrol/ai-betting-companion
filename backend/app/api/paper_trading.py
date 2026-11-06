@@ -62,7 +62,7 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
     """
     List virtual bets (Greens, Reds, and PENDING).
     """
-    query = db.query(PaperBet).join(Match)
+    query = db.query(PaperBet).outerjoin(Match)
     if status:
         query = query.filter(PaperBet.status == status)
 
@@ -76,6 +76,8 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
         if is_mult and b.multiple_legs:
             try:
                 legs_data = json.loads(b.multiple_legs)
+                if isinstance(legs_data, str):
+                    legs_data = json.loads(legs_data)
             except Exception:
                 legs_data = []
         elif not is_mult:
@@ -91,7 +93,7 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
                 fair_odds = p.fair_odds if p else round(100.0 / model_prob, 2)
                 stats_data = {
                     "home": {
-                        "name": b.match.home_team,
+                        "name": b.match.home_team if b.match else "Casa",
                         "rank": "Competidor",
                         "points": "-",
                         "record": "Forma Regular",
@@ -100,7 +102,7 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
                         "last_matches": []
                     },
                     "away": {
-                        "name": b.match.away_team,
+                        "name": b.match.away_team if b.match else "Fora",
                         "rank": "Competidor",
                         "points": "-",
                         "record": "Forma Regular",
@@ -124,12 +126,12 @@ def list_paper_bets(status: str | None = None, db: Session = Depends(get_db)):
         results.append({
             "id": b.id,
             "match_id": b.match_id,
-            "home_team": "💎 Múltipla de Valor" if is_mult else b.match.home_team,
-            "away_team": f"{len(legs_data)} Seleções" if is_mult and legs_data else (b.match.away_team if not is_mult else ""),
-            "league": "Múltipla SRIJ" if is_mult else b.match.league,
-            "home_score": None if is_mult else b.match.home_score,
-            "away_score": None if is_mult else b.match.away_score,
-            "match_status": "PENDING" if is_mult else b.match.status.value,
+            "home_team": "💎 Múltipla de Valor" if is_mult else (b.match.home_team if b.match else "Jogo"),
+            "away_team": f"{len(legs_data)} Seleções" if is_mult and legs_data else (b.match.away_team if b.match else ""),
+            "league": "Múltipla SRIJ" if is_mult else (b.match.league if b.match else "SRIJ"),
+            "home_score": None if is_mult else (b.match.home_score if b.match else None),
+            "away_score": None if is_mult else (b.match.away_score if b.match else None),
+            "match_status": "PENDING" if is_mult else (b.match.status.value if b.match else "FINISHED"),
             "bookmaker": b.bookmaker,
             "market_type": b.market_type,
             "selection": b.selection,
